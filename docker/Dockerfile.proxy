@@ -1,0 +1,10 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates squid \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /run/squid /var/spool/squid /var/log/squid /tmp/squid-cache \
+ && chown -R proxy:proxy /run/squid /var/spool/squid /var/log/squid /tmp/squid-cache
+COPY docker/squid-grok.conf /etc/squid/squid.conf
+USER proxy:proxy
+ENTRYPOINT ["/usr/sbin/squid", "-N", "-f", "/etc/squid/squid.conf"]
