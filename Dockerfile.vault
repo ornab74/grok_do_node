@@ -2,10 +2,25 @@
 ARG BASE_IMAGE=chrome-patch-refreshed:151.0.7922.169
 FROM ${BASE_IMAGE}
 USER 0:0
-# AES-GCM/KDF implementation from PyCA. Binary wheels only: never compile crypto
-# toolchains during this small application-layer build.
-RUN python -m pip install --no-cache-dir --disable-pip-version-check --only-binary=:all: \
-    'cryptography==50.0.1'
+
+# Vault crypto plus the optional Selenium-compatible undetected-chromedriver
+# backend used by the Grok TUI. UC is pinned and never downloads a driver at
+# runtime: we patch a copy of the already verified Chromium 151 driver here.
+# The original /opt/chromium/chromedriver remains untouched for sandbox audits.
+RUN python -m pip install --no-cache-dir --disable-pip-version-check \
+    'cryptography==50.0.1' \
+    'setuptools==80.9.0' \
+    'undetected-chromedriver==3.5.5'
+
+RUN install -d -m 0755 /opt/ucdriver \
+ && install -m 0755 /opt/chromium/chromedriver /opt/ucdriver/chromedriver \
+ && python -c "from undetected_chromedriver.patcher import Patcher; p=Patcher(executable_path='/opt/ucdriver/chromedriver', version_main=151); p.auto(); assert p.is_binary_patched('/opt/ucdriver/chromedriver'), 'UC patch failed'"
+RUN /opt/ucdriver/chromedriver --version | grep -F '151.0.7922.169' \
+ && sha256sum /opt/ucdriver/chromedriver > /opt/ucdriver/chromedriver.sha256 \
+ && chmod 0555 /opt/ucdriver/chromedriver \
+ && chmod 0444 /opt/ucdriver/chromedriver.sha256 \
+ && chmod 0555 /opt/ucdriver
+
 COPY --chown=10001:10001 ascii_browser.py /app/ascii_browser.py
 COPY --chown=10001:10001 grok_vault_tui.py /app/grok_vault_tui.py
 RUN chmod 0444 /app/grok_vault_tui.py

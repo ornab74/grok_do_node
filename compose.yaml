@@ -92,6 +92,8 @@ services:
       NO_PROXY: 127.0.0.1,localhost
       GROK_VAULT_DIR: /vault
       GROK_SESSION_ROOT: /session
+      GROK_WEBDRIVER_BACKEND: ${GROK_WEBDRIVER_BACKEND:-uc}
+      GROK_DRIVER_START_RETRIES: ${GROK_DRIVER_START_RETRIES:-2}
     volumes:
       - grok-vault:/vault
     networks: [grok-internal]

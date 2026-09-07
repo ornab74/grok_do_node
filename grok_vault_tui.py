@@ -14,6 +14,7 @@ import resource
 import secrets
 import shutil
 import string
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -36,6 +37,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
+import undetected_chromedriver as uc
+from undetected_chromedriver.patcher import Patcher as UcPatcher
+
 from ascii_browser import AsciiBrowser
 from common.browser import browser_arguments
 from common.security_gate import APPROVED_VERSION, SecurityGateError
@@ -54,7 +58,7 @@ NONCE_BYTES = 12
 SCRYPT_N = 2 ** 17
 SCRYPT_R = 8
 SCRYPT_P = 1
-APP_VERSION = "8.9-ascii-chromium"
+APP_VERSION = "8.9.1-uc-pinned"
 
 COMPOSER_SELECTORS = (
     (By.CSS_SELECTOR, '[data-testid="chat-input"] div.ProseMirror[role="textbox"]'),
@@ -359,16 +363,15 @@ def generated_password(length: int = 24) -> str:
             return p
 
 
-def create_driver(profile: Path) -> webdriver.Chrome:
-    binary = Path("/opt/chromium/chrome")
-    driver_path = Path("/opt/chromium/chromedriver")
-    profile.mkdir(parents=True, exist_ok=True, mode=0o700)
-    options = webdriver.ChromeOptions()
-    options.binary_location = str(binary)
-    for arg in browser_arguments(os.environ.get("SCRAPER_PROXY", "").strip()):
-        options.add_argument(arg)
-    options.add_argument(f"--user-data-dir={profile}")
-    options.add_experimental_option("prefs", {
+UC_DRIVER_PATH = Path(os.environ.get("GROK_UC_DRIVER_PATH", "/opt/ucdriver/chromedriver"))
+STOCK_DRIVER_PATH = Path("/opt/chromium/chromedriver")
+CHROMIUM_BINARY = Path("/opt/chromium/chrome")
+WEBDRIVER_BACKEND = os.environ.get("GROK_WEBDRIVER_BACKEND", "uc").strip().lower()
+DRIVER_START_RETRIES = max(1, min(3, int(os.environ.get("GROK_DRIVER_START_RETRIES", "2"))))
+
+
+def _driver_prefs() -> dict:
+    return {
         "download_restrictions": 3,
         "profile.default_content_setting_values.automatic_downloads": 2,
         "profile.default_content_setting_values.clipboard": 2,
@@ -376,15 +379,121 @@ def create_driver(profile: Path) -> webdriver.Chrome:
         "profile.default_content_setting_values.media_stream": 2,
         "profile.default_content_setting_values.notifications": 2,
         "profile.default_content_setting_values.sensors": 2,
-    })
+    }
+
+
+def _cleanup_profile_runtime_locks(profile: Path) -> None:
+    # Chromium may leave these transient files after a hard disconnect. They are
+    # never part of the encrypted profile archive and are safe to discard before
+    # starting a new browser process.
+    for name in ("DevToolsActivePort", "SingletonCookie", "SingletonLock", "SingletonSocket"):
+        path = profile / name
+        try:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+        except OSError:
+            pass
+
+
+def _binary_version(path: Path) -> str:
+    try:
+        result = subprocess.run(
+            [str(path), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=8,
+            env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SecurityGateError(f"could not execute browser component {path}: {exc}") from exc
+    match = re.search(r"\b(\d+\.\d+\.\d+\.\d+)\b", result.stdout or result.stderr)
+    if not match:
+        raise SecurityGateError(f"could not parse browser component version from {path}")
+    return match.group(1)
+
+
+def _verify_uc_driver() -> None:
+    if not UC_DRIVER_PATH.is_file() or not os.access(UC_DRIVER_PATH, os.X_OK):
+        raise SecurityGateError(f"pinned UC driver is missing or not executable: {UC_DRIVER_PATH}")
+    if UC_DRIVER_PATH.stat().st_mode & 0o222:
+        raise SecurityGateError("pinned UC driver must be immutable at runtime")
+    if _binary_version(UC_DRIVER_PATH) != APPROVED_VERSION:
+        raise SecurityGateError("pinned UC driver version does not match approved Chromium")
+    patcher = UcPatcher(executable_path=str(UC_DRIVER_PATH), version_main=int(APPROVED_VERSION.split('.', 1)[0]))
+    if not patcher.is_binary_patched(str(UC_DRIVER_PATH)):
+        raise SecurityGateError("pinned UC driver is not patched; runtime patching/downloads are disabled")
+
+
+def _common_options(options) -> None:
+    options.binary_location = str(CHROMIUM_BINARY)
+    for arg in browser_arguments(os.environ.get("SCRAPER_PROXY", "").strip()):
+        # UC owns the loopback DevTools endpoint used to attach to Chromium. Its
+        # own --remote-debugging-port conflicts with Selenium's pipe transport.
+        if WEBDRIVER_BACKEND == "uc" and arg == "--remote-debugging-pipe":
+            continue
+        options.add_argument(arg)
+    options.add_experimental_option("prefs", _driver_prefs())
     options.set_capability("acceptInsecureCerts", False)
-    service = ChromeService(executable_path=str(driver_path), log_output=os.devnull)
-    driver = webdriver.Chrome(service=service, options=options)
-    if driver.capabilities.get("browserVersion") != APPROVED_VERSION:
-        driver.quit()
-        raise SecurityGateError("running browser version is not approved")
-    driver.set_page_load_timeout(35)
+
+
+def _create_uc_driver(profile: Path) -> webdriver.Chrome:
+    _verify_uc_driver()
+    options = uc.ChromeOptions()
+    _common_options(options)
+    # Do NOT pass headless=True to UC: its legacy headless branch injects
+    # --no-sandbox. Headless mode is already supplied by browser_arguments(),
+    # so Chromium keeps the reviewed namespace/seccomp sandbox enabled.
+    driver = uc.Chrome(
+        options=options,
+        user_data_dir=str(profile),
+        driver_executable_path=str(UC_DRIVER_PATH),
+        browser_executable_path=str(CHROMIUM_BINARY),
+        version_main=int(APPROVED_VERSION.split('.', 1)[0]),
+        headless=False,
+        no_sandbox=False,
+        use_subprocess=False,
+        suppress_welcome=True,
+        enable_cdp_events=False,
+    )
     return driver
+
+
+def _create_stock_driver(profile: Path) -> webdriver.Chrome:
+    options = webdriver.ChromeOptions()
+    _common_options(options)
+    options.add_argument(f"--user-data-dir={profile}")
+    service = ChromeService(executable_path=str(STOCK_DRIVER_PATH), log_output=os.devnull)
+    return webdriver.Chrome(service=service, options=options)
+
+
+def create_driver(profile: Path) -> webdriver.Chrome:
+    if WEBDRIVER_BACKEND not in {"uc", "selenium"}:
+        raise SecurityGateError("GROK_WEBDRIVER_BACKEND must be 'uc' or 'selenium'")
+    if not CHROMIUM_BINARY.is_file() or _binary_version(CHROMIUM_BINARY) != APPROVED_VERSION:
+        raise SecurityGateError("approved Chromium binary is missing or has the wrong version")
+
+    profile.mkdir(parents=True, exist_ok=True, mode=0o700)
+    last_exc: Exception | None = None
+    for attempt in range(1, DRIVER_START_RETRIES + 1):
+        _cleanup_profile_runtime_locks(profile)
+        try:
+            driver = _create_uc_driver(profile) if WEBDRIVER_BACKEND == "uc" else _create_stock_driver(profile)
+            if driver.capabilities.get("browserVersion") != APPROVED_VERSION:
+                driver.quit()
+                raise SecurityGateError("running browser version is not approved")
+            driver.set_page_load_timeout(35)
+            return driver
+        except Exception as exc:
+            last_exc = exc
+            if attempt < DRIVER_START_RETRIES:
+                time.sleep(0.75 * attempt)
+
+    backend_detail = "undetected-chromedriver 3.5.5" if WEBDRIVER_BACKEND == "uc" else "stock Selenium"
+    raise GrokUiError(
+        f"could not start {backend_detail} after {DRIVER_START_RETRIES} attempt(s): {last_exc}. "
+        "Set GROK_WEBDRIVER_BACKEND=selenium only if you need the stock-driver fallback."
+    ) from last_exc
 
 
 class AccountSession:

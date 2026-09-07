@@ -381,3 +381,45 @@ B  open full ASCII Chromium view
 
 so the same live browser/profile can be inspected without destroying the
 pending authentication session.
+
+## V8.9.1 build-context fix
+
+V8.9 added `ascii_browser.py` to `Dockerfile.vault`, but the host installer did
+not stage that module into `/srv/grok-secure-node`, which is the Docker build
+context. V8.9.1 explicitly installs:
+
+```text
+ascii_browser.py
+grok_vault_tui.py
+Dockerfile.vault
+```
+
+into the application directory before building the vault image, and performs a
+pre-build assertion that both Python modules are present.
+
+## V8.9.1-UC: pinned undetected-chromedriver backend
+
+This modified bundle adds `undetected-chromedriver==3.5.5` as the default WebDriver backend for the Grok TUI while preserving the original hardened Chromium 151 runtime. The stock Selenium driver remains in place for the sandbox audit and as an explicit fallback.
+
+The integration is intentionally constrained:
+
+- the verified `/opt/chromium/chromedriver` is never modified; a copy is patched during the immutable image build and stored at `/opt/ucdriver/chromedriver`
+- runtime driver downloads and runtime patching are not used
+- the UC driver must be non-writable and must still report Chromium/ChromeDriver `151.0.7922.169`
+- `headless=True` is **not** passed to UC because its legacy headless path may inject `--no-sandbox`; the existing reviewed `--headless=new` argument is used instead
+- the existing Squid allowlist, rootless Docker boundary, seccomp/AppArmor policy, encrypted profiles, and CAPTCHA/human-verification guard remain in force
+- CAPTCHA/Cloudflare controls are still observation-only; this build does not click, solve, or bypass a human-verification challenge
+
+The TUI uses UC by default. To force the original stock Selenium path for troubleshooting:
+
+```bash
+sudo env GROK_WEBDRIVER_BACKEND=selenium grok-tui
+```
+
+Driver startup is retried twice by default (bounded to 1-3 attempts). You can override this for diagnostics:
+
+```bash
+sudo env GROK_DRIVER_START_RETRIES=3 grok-tui
+```
+
+`undetected-chromedriver` 3.5.5 is an old upstream release, so compatibility with future Chromium versions should not be assumed. This bundle avoids its automatic driver downloader and binds it to the already pinned Chromium 151 pair.

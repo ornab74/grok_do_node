@@ -386,6 +386,7 @@ install_application_files(){
   PHASE="application-files"
   install -d -m 0755 -o root -g root "$APP_DIR" "$APP_DIR/docker" "$APP_DIR/security" "$APP_DIR/refresh-context/common" "$APP_DIR/refresh-context/docker"
 
+  install -m 0644 "$SCRIPT_DIR/ascii_browser.py" "$APP_DIR/ascii_browser.py"
   install -m 0644 "$SCRIPT_DIR/grok_vault_tui.py" "$APP_DIR/grok_vault_tui.py"
   install -m 0644 "$SCRIPT_DIR/Dockerfile.vault" "$APP_DIR/Dockerfile.vault"
   install -m 0644 "$SCRIPT_DIR/compose.yaml" "$APP_DIR/compose.yaml"
@@ -440,6 +441,8 @@ pull_and_refresh(){
     --tag "$REFRESHED_IMAGE" \
     "$APP_DIR/refresh-context"
 
+  [[ -f "$APP_DIR/ascii_browser.py" ]] || die 'ASCII browser module is missing from Docker build context'
+  [[ -f "$APP_DIR/grok_vault_tui.py" ]] || die 'Grok vault TUI is missing from Docker build context'
   log 'Building Grok vault TUI layer'
   run_as_service env DOCKER_BUILDKIT=1 docker build \
     --pull=true \
