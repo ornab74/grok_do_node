@@ -1,0 +1,5 @@
+Checked against the assignment sources on 2026-08-20. Wikipedia's robots.txt contains user-agent-specific groups and blocks many expensive, administrative, special, search, API, history, and policy-process paths; the exact list is long and changes, so the live file must be checked before every scraping run. OWASP's robots.txt currently blocks /membership-success/ for all user agents.
+
+robots.txt tells automated clients which paths a site owner does not want crawled and may define different rules for named user agents. It is not an authorization mechanism, but respecting it, using a descriptive user agent, limiting requests, and stopping on errors reduces load and supports ethical scraping.
+
+The Durham/BiblioCommons rules must also be verified immediately before a live assignment run. The packaged live command fails closed if robots.txt cannot be downloaded or does not permit the target URL.

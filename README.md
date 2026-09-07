@@ -1,63 +1,180 @@
-# Grok TUI on the chrome-patch Chromium image
+# Grok Secure Node — from-scratch DigitalOcean bundle
 
-This bundle adapts the supplied `scraper-chrome-docker-main` security boundary for a terminal Grok client on an amd64 DigitalOcean node.
+This bundle is self-contained for a fresh **Ubuntu/Debian amd64 DigitalOcean node**. It does not depend on any of the earlier repair/V3/V4/V5 bundles.
 
-## Pinned browser image
+It uses the public, immutable Chromium runtime you specified:
+
+`ghcr.io/ornab74/chrome-patch-chromium@sha256:f212beff4487370a6c026a1834f779657e76c7091c6ae42b4d2cee8cfe42d2f3`
+
+The included `chrome-patch-src/` snapshot comes from the ZIP supplied in this conversation. The installer verifies the security-critical source files against that snapshot's `SHA256SUMS`, refreshes the application/security layer as required by `runtime-image.lock.json`, and then runs the current `chrome://sandbox` probe.
+
+## What this installs
+
+- dedicated locked host account: `grokbrowser`
+- rootless Docker for that account
+- reviewed RootlessKit + Chromium AppArmor handling
+- exact Chromium seccomp policy from the supplied chrome-patch source
+- immutable Chromium 151.0.7922.169 runtime pulled from GHCR by digest
+- current application/security refresh layer
+- headless Selenium browser running only on the DigitalOcean node
+- allowlisting Squid egress proxy
+- terminal Grok client with account registration/login/account switching
+- AES-256-GCM vault for account metadata/passwords
+- separately encrypted Chromium profile/session for each account
+- plaintext live Chromium profile only on container tmpfs (`/session`)
+- no Selenium, VNC, browser, or application ports published on the host
+
+CAPTCHA/anti-bot challenges are **not bypassed**. If xAI requests an email OTP or verification link, the TUI asks you to enter/paste it into the SSH terminal and the DigitalOcean browser completes the navigation.
+
+## Fresh installation
+
+Copy this ZIP to the Droplet, then:
+
+```bash
+unzip grok_secure_node_from_scratch.zip
+cd grok_secure_node_from_scratch
+sudo ./install.sh
+```
+
+Recommended runtime size: at least 2 vCPUs, 4 GB RAM, amd64 Ubuntu/Debian. The script refuses lower RAM/CPU/disk before making changes.
+
+The installer uses Docker's signed apt repository if the required rootless Docker/Compose stack is not already installed. It never adds `grokbrowser` to the host `docker` or `sudo` group.
+
+Successful installation ends with:
 
 ```text
-ghcr.io/ornab74/chrome-patch-chromium@sha256:f212beff4487370a6c026a1834f779657e76c7091c6ae42b4d2cee8cfe42d2f3
+INSTALL PASSED
+
+Start:          sudo grok-tui
+Sandbox audit:  sudo grok-audit
+Status:         sudo grok-status
+Stop proxy:     sudo grok-stop
+Vault backup:   sudo grok-vault-backup
 ```
 
-The image is pulled by immutable digest. No GitHub token is used for the public package.
-
-## Deploy
-
-Copy this directory to an Ubuntu/Debian amd64 DigitalOcean droplet with at least 2 vCPU, ~4 GiB RAM, and 8 GiB free disk, then:
+## First run
 
 ```bash
-sudo ./deploy_digitalocean.sh
+sudo grok-tui
 ```
 
-The deployer:
+The first launch creates the encrypted vault and asks for a master passphrase through the attached TTY. The passphrase is not put in Docker environment variables, command-line arguments, `.env` files, or the vault itself.
 
-- installs Docker Engine + rootless extras from Docker's signed apt repository when needed;
-- creates an unprivileged `grokbrowser` service account, outside `sudo` and `docker` groups;
-- enables rootless Docker and verifies rootless + seccomp are active;
-- loads the exact `chrome-patch-browser` AppArmor profile and Chromium seccomp JSON copied from the supplied ZIP;
-- pulls the public GHCR image by the pinned digest;
-- verifies `/opt/chromium/manifest.sha256` plus browser/driver versions;
-- builds the same style of unprivileged Squid egress proxy with a Grok-specific allowlist;
-- runs the image's own sandbox audit before declaring success.
+Main menu:
 
-## Run
+```text
+C  chat with active account
+A  account manager / register / login
+V  vault security information
+Q  quit and lock vault
+```
 
-SSH to the node and run:
+Account manager:
+
+```text
+N      register a new xAI/Grok email account
+I      import an existing account
+Enter  make selected account active
+L      login/test selected account
+R      reveal selected stored credentials after confirmation
+D      remove account + encrypted browser profile
+P      rotate vault master passphrase
+Esc    back
+```
+
+### Register a new account
+
+Choose `A`, then `N`. The browser on the Droplet uses the normal xAI email signup flow. The TUI can generate a strong random password if a password stage is presented. If email verification is required, enter the OTP or paste the HTTPS xAI/Grok verification URL at the terminal prompt.
+
+The browser page itself is never rendered on your Chromebook. SSH is the only UI transport.
+
+### Login / session persistence
+
+Each account has an encrypted Chromium profile. Before a session starts:
+
+```text
+encrypted profile -> AES-GCM decrypt -> /session tmpfs -> Chromium
+```
+
+After Chromium exits:
+
+```text
+/session tmpfs -> tar -> AES-GCM encrypt -> persistent vault volume
+```
+
+The plaintext session directory is removed after the browser closes.
+
+## Vault crypto
+
+Vault/account object:
+
+- AES-256-GCM
+- fresh 96-bit nonce for every write
+- scrypt master-key derivation
+- N=131072, r=8, p=1
+- 128-bit random salt
+- 256-bit derived master key
+
+Each browser profile is encrypted with a separate 256-bit subkey derived by HMAC-SHA-256 domain separation from the unlocked master key and the account ID.
+
+The encrypted persistent Docker volume has the explicit name:
+
+`grok-secure-vault-v1`
+
+The live TUI also disables core dumps and marks itself non-dumpable as defense in depth. This does **not** make a live unlocked VM safe against host-root or kernel compromise.
+
+## Backup
+
+Close the TUI first, then:
 
 ```bash
-grok-tui
+sudo grok-vault-backup
 ```
 
-Keys/commands:
+This backs up only the encrypted vault volume to `/var/backups/grok-vault/` and prints a SHA-256 checksum. It refuses to run while a TUI container is active.
 
-- `Enter` sends the current prompt.
-- Left/right, Home/End, Backspace/Delete edit the one-line prompt.
-- `/new` opens a fresh Grok page.
-- `/reload` reloads Grok.
-- `/clear` clears only the local terminal transcript.
-- `/quit`, Ctrl-C, or Ctrl-D exits.
+## Security checks
 
-The assistant bubble is polled while it grows, so the TUI redraws as Grok streams text.
+Run at any time:
 
-## Isolation model
+```bash
+sudo grok-audit
+```
 
-The browser container has no direct Internet network. Its only network is `grok-internal`, which is marked `internal: true`. The Squid container alone is attached both to that internal network and to an outbound network. Squid allows HTTPS only to the explicit Grok/xAI/X/Cloudflare domain set and rejects private, loopback, link-local, and cloud-metadata destination ranges.
+Expected result includes:
 
-The browser retains the ZIP's controls: UID/GID `10001`, read-only root filesystem, all capabilities dropped, no-new-privileges, reviewed AppArmor, reviewed seccomp, PID/memory/CPU limits, no Docker socket, no host mounts, and no `--no-sandbox`/remote-debugging escape switches.
+```json
+{
+  "evaluation": "You are adequately sandboxed.",
+  "required_checks": {
+    "Layer 1 Sandbox": "Namespace",
+    "Network namespaces": "Yes",
+    "PID namespaces": "Yes",
+    "Seccomp-BPF sandbox": "Yes"
+  },
+  "sandbox": "verified"
+}
+```
 
-## Authentication / verification
+`sudo grok-status` shows Compose state and rootless Docker security options.
 
-This is deliberately not a login or anti-bot bypass. The browser home is ephemeral. If Grok requires a CAPTCHA or an authenticated account before exposing the composer, the TUI reports that condition and stops rather than injecting cookies, passwords, or bypass logic.
+## Network boundary
 
-## Grok selectors
+The Chromium container is on an internal Docker network and cannot route directly to the Internet. Only the Squid proxy has an outbound network. Its allowlist is intentionally narrow:
 
-The adapter currently tries the stable `data-testid` / ProseMirror selectors first and older TipTap/markdown selectors as fallbacks. Grok can change its DOM at any time; if the website changes, update only `grok_tui.py`, not the browser sandbox flags.
+- `grok.com` and subdomains
+- `x.ai` and subdomains
+- `accounts.x.ai`
+- `challenges.cloudflare.com`
+
+Loopback, RFC1918/private, link-local, cloud metadata (`169.254.0.0/16`), documentation ranges, multicast, and IPv6 local ranges are explicitly denied.
+
+Google/Apple/X OAuth is intentionally not configured. This build targets xAI email registration/login.
+
+## Host firewall
+
+No application port is published by this stack. Restrict the DigitalOcean Cloud Firewall to the SSH sources you actually use. Do not expose the rootless Docker socket.
+
+## Updating
+
+The Chromium runtime is deliberately digest-pinned. Do not replace the digest with `latest`. Updating Chromium/security policy should be treated as a reviewed change: update the immutable digest, source snapshot/policies, regenerate bundle checksums, and rerun `sudo grok-audit`.

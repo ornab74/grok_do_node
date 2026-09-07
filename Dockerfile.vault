@@ -1,0 +1,11 @@
+# syntax=docker/dockerfile:1.7
+ARG BASE_IMAGE=chrome-patch-refreshed:151.0.7922.169
+FROM ${BASE_IMAGE}
+USER 0:0
+# AES-GCM/KDF implementation from PyCA. Binary wheels only: never compile crypto
+# toolchains during this small application-layer build.
+RUN python -m pip install --no-cache-dir --disable-pip-version-check --only-binary=:all: \
+    'cryptography==50.0.1'
+COPY --chown=10001:10001 grok_vault_tui.py /app/grok_vault_tui.py
+RUN chmod 0444 /app/grok_vault_tui.py
+USER 10001:10001

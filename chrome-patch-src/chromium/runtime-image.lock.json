@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "registry_username": "ornab74",
+  "image": "ghcr.io/ornab74/chrome-patch-chromium",
+  "tag": "151.0.7922.169-patched",
+  "digest": "sha256:f212beff4487370a6c026a1834f779657e76c7091c6ae42b4d2cee8cfe42d2f3",
+  "immutable_reference": "ghcr.io/ornab74/chrome-patch-chromium@sha256:f212beff4487370a6c026a1834f779657e76c7091c6ae42b4d2cee8cfe42d2f3",
+  "local_tag": "secure-scraper-chromium:151.0.7922.169-patched",
+  "platform": "linux/amd64",
+  "chromium_version": "151.0.7922.169",
+  "selenium_version": "4.47.0",
+  "source_lock": "chromium/source.lock.json",
+  "runtime_manifest": "/opt/chromium/manifest.sha256",
+  "restore_requires_application_refresh": true,
+  "validation_scope": "Restore verifies the compiled Chromium manifest, refreshes the current repository application layer, and then runs the complete sandbox and coursework audit."
+}

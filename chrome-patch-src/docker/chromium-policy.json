@@ -1,0 +1,21 @@
+{
+  "AudioCaptureAllowed": false,
+  "AutofillAddressEnabled": false,
+  "AutofillCreditCardEnabled": false,
+  "BackgroundModeEnabled": false,
+  "DefaultFileSystemReadGuardSetting": 2,
+  "DefaultFileSystemWriteGuardSetting": 2,
+  "DefaultGeolocationSetting": 2,
+  "DefaultNotificationsSetting": 2,
+  "DefaultSensorsSetting": 2,
+  "DownloadRestrictions": 3,
+  "ExtensionInstallBlocklist": ["*"],
+  "PasswordManagerEnabled": false,
+  "PrintingEnabled": false,
+  "RemoteAccessHostAllowRemoteAccessConnections": false,
+  "SafeBrowsingProtectionLevel": 2,
+  "ScreenCaptureAllowed": false,
+  "SyncDisabled": true,
+  "URLBlocklist": ["file://*", "ftp://*", "chrome-extension://*", "devtools://*"],
+  "VideoCaptureAllowed": false
+}

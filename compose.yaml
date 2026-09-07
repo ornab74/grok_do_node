@@ -1,26 +1,26 @@
-name: grok-patched-node
+name: grok-secure-node
 
-x-patched-image: &patched-image
-  image: ghcr.io/ornab74/chrome-patch-chromium@sha256:f212beff4487370a6c026a1834f779657e76c7091c6ae42b4d2cee8cfe42d2f3
+x-vault-browser: &vault-browser
+  image: grok-chrome-patch:151.0.7922.169-vault
   platform: linux/amd64
-
-x-hardening: &hardening
-  <<: *patched-image
   user: "10001:10001"
   read_only: true
   init: true
   cap_drop: [ALL]
   security_opt:
     - apparmor=chrome-patch-browser
-    - seccomp=./docker/chromium-seccomp.json
+    - seccomp=./security/chromium-seccomp.json
     - no-new-privileges:true
   pids_limit: 256
   mem_limit: 2g
   cpus: 2.0
   shm_size: 512m
+  ulimits:
+    core: 0
   tmpfs:
-    - /tmp:rw,nosuid,nodev,noexec,size=512m,mode=1777
-    - /home/scraper:rw,nosuid,nodev,noexec,size=96m,uid=10001,gid=10001,mode=0700
+    - /tmp:rw,nosuid,nodev,noexec,size=384m,uid=10001,gid=10001,mode=0700
+    - /home/scraper:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700
+    - /session:rw,nosuid,nodev,noexec,size=768m,uid=10001,gid=10001,mode=0700
   environment:
     PYTHONHASHSEED: "0"
   logging:
@@ -30,8 +30,20 @@ x-hardening: &hardening
       max-file: "2"
 
 services:
+  vault-init:
+    image: debian:bookworm-slim
+    user: "0:0"
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - grok-vault:/vault
+    command: ["/bin/sh", "-ec", "mkdir -p /vault/profiles; chown -R 10001:10001 /vault; chmod 0700 /vault /vault/profiles"]
+
   browser-audit:
-    <<: *hardening
+    <<: *vault-browser
     network_mode: none
     command: ["python", "-m", "common.sandbox_probe"]
 
@@ -61,7 +73,7 @@ services:
       retries: 10
 
   grok-tui:
-    <<: *hardening
+    <<: *vault-browser
     depends_on:
       egress-proxy:
         condition: service_healthy
@@ -71,16 +83,20 @@ services:
       HTTP_PROXY: http://egress-proxy:3128
       HTTPS_PROXY: http://egress-proxy:3128
       NO_PROXY: 127.0.0.1,localhost
+      GROK_VAULT_DIR: /vault
+      GROK_SESSION_ROOT: /session
+    volumes:
+      - grok-vault:/vault
     networks: [grok-internal]
     stdin_open: true
     tty: true
-    volumes:
-      - ./grok_tui.py:/app/grok_tui.py:ro
-    command: ["python", "/app/grok_tui.py"]
+    command: ["python", "/app/grok_vault_tui.py"]
 
 networks:
-  # Browser/TUI has no direct default route to the Internet.
   grok-internal:
     internal: true
-  # Only Squid joins this network.
   proxy-outbound: {}
+
+volumes:
+  grok-vault:
+    name: grok-secure-vault-v1

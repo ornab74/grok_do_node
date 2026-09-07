@@ -1,0 +1,9 @@
+{
+  "chromium_version": "151.0.7922.169",
+  "sandbox_fix_commit": "4298968d02fa7a24dccc65b03071af84c5418c38",
+  "sandbox_fix_title": "[sandbox/linux] Fix directory traversal vulnerability",
+  "depot_tools_revision": "547d7e12fe104305c7de797d5a2b4155914ad362",
+  "selenium_version": "4.47.0",
+  "platform": "linux-amd64",
+  "policy": "exact-version-and-patched-source"
+}

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "run_id": "20260822T020520Z",
+  "run_date_utc": "2026-08-22",
+  "mode": "skip-build",
+  "outcome": "FULL VALIDATION PASSED",
+  "environment": {
+    "provider": "DigitalOcean",
+    "architecture": "linux-amd64",
+    "cpu_count": 8,
+    "memory_gib": 16,
+    "docker_mode": "rootless"
+  },
+  "source": {
+    "repository": "ornab74/chrome-patch",
+    "branch": "codex/hardened-assignment8-capstone",
+    "runtime_commit": "d955c3ca2e1fbd2756c629d024690704cb77cc8f",
+    "source_archive_sha256": "8dc1fc819b469c02268a576d17728e8dbab3ccae84260c1f09da4dddcbb9cfd5"
+  },
+  "runtime": {
+    "chromium_version": "151.0.7922.169",
+    "chromedriver_version": "151.0.7922.169",
+    "selenium_version": "4.47.0",
+    "ghcr_immutable_reference": "ghcr.io/ornab74/chrome-patch-chromium@sha256:f212beff4487370a6c026a1834f779657e76c7091c6ae42b4d2cee8cfe42d2f3",
+    "refreshed_local_image_sha256": "d48713a93001dccb5ecc771d41cfbcf7aafbef67fd35e58901c770dcec15cee1"
+  },
+  "sandbox": {
+    "nested_user_namespace": "passed",
+    "layer_1_sandbox": "Namespace",
+    "pid_namespaces": "Yes",
+    "network_namespaces": "Yes",
+    "seccomp_bpf_sandbox": "Yes",
+    "evaluation": "You are adequately sandboxed.",
+    "verified_probe_count": 2
+  },
+  "tests": {
+    "host_repository_tests_passed": 26,
+    "container_tests_passed": 27,
+    "container_subtests_passed": 33
+  },
+  "assignment8": {
+    "books": 3,
+    "unique_owasp_risks": 10,
+    "verification": "passed"
+  },
+  "capstone": {
+    "raw_rows": 9,
+    "clean_rows": 9,
+    "removed_rows": 0,
+    "sqlite_rows": 9,
+    "cities": 9,
+    "minimum_c": 13.0,
+    "average_c": 24.0,
+    "maximum_c": 38.0,
+    "verification": "passed"
+  },
+  "evidence": {
+    "terminal_capture": {
+      "path": "captured-terminal.txt",
+      "sha256": "d2aaf11e80c967bc6faefebe2d56375184b9e4478a011f6c1ea618519fd911f6",
+      "provenance": "operator-supplied terminal text"
+    },
+    "screenshot": {
+      "path": "full-validation.png",
+      "sha256": "bd05c54136979f0f2366776ab42904de65c4be36dcf0cf2c41e6602d298ab24a",
+      "provenance": "operator-supplied terminal screenshot"
+    }
+  },
+  "assurance_note": "Operator-captured supporting evidence; reproduce from the pinned commit and immutable image for independent verification."
+}

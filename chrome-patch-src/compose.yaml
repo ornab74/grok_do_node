@@ -1,0 +1,204 @@
+name: chrome-patch
+
+x-image: &scraper-image
+  image: secure-scraper-chromium:151.0.7922.169-patched
+  build:
+    context: .
+    args:
+      DEBIAN_IMAGE: ${DEBIAN_IMAGE:-debian:bookworm-slim}
+      PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.13.15-slim-bookworm}
+      CHROMIUM_VERSION: 151.0.7922.169
+      SANDBOX_FIX_COMMIT: 4298968d02fa7a24dccc65b03071af84c5418c38
+      DEPOT_TOOLS_REVISION: 547d7e12fe104305c7de797d5a2b4155914ad362
+      BUILD_JOBS: ${BUILD_JOBS:-8}
+
+x-hardening: &scraper-hardening
+  <<: *scraper-image
+  user: "10001:10001"
+  read_only: true
+  init: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  mem_limit: 2g
+  cpus: 2.0
+  shm_size: 512m
+  tmpfs:
+    - /tmp:rw,nosuid,nodev,noexec,size=512m,mode=1777
+    - /home/scraper:rw,nosuid,nodev,noexec,size=64m,uid=10001,gid=10001,mode=0700
+  environment:
+    PYTHONHASHSEED: "0"
+  logging:
+    driver: json-file
+    options:
+      max-size: 5m
+      max-file: "2"
+
+# Browser jobs retain the common boundary and add a reviewed AppArmor label
+# plus a Moby-derived seccomp profile. The profile permits only Chromium's
+# exact user/PID/network namespace combinations; it is not unconfined.
+x-browser-hardening: &browser-hardening
+  <<: *scraper-hardening
+  security_opt:
+    - apparmor=chrome-patch-browser
+    - seccomp=./docker/chromium-seccomp.json
+    - no-new-privileges:true
+
+services:
+  browser-audit:
+    <<: *browser-hardening
+    network_mode: none
+    command: ["python", "-m", "common.sandbox_probe"]
+
+  test:
+    <<: *browser-hardening
+    network_mode: none
+    volumes:
+      - assignment8-results:/results/assignment8
+      - capstone-results:/results/capstone
+    command:
+      - /bin/sh
+      - -ec
+      - >-
+        python -m pytest -q -p no:cacheprovider tests assignment8/tests capstone/tests &&
+        python assignment8/get_books.py --fixture &&
+        python assignment8/owasp_top_10.py --fixture &&
+        python assignment8/tests/verify_outputs.py /results/assignment8 &&
+        python capstone/pipeline.py --fixture &&
+        python capstone/tests/verify_outputs.py /results/capstone
+
+  assignment8-books:
+    <<: *browser-hardening
+    network_mode: none
+    volumes:
+      - assignment8-results:/results/assignment8
+    command: ["python", "assignment8/get_books.py", "--fixture"]
+
+  assignment8-owasp:
+    <<: *browser-hardening
+    network_mode: none
+    volumes:
+      - assignment8-results:/results/assignment8
+    command: ["python", "assignment8/owasp_top_10.py", "--fixture"]
+
+  capstone:
+    <<: *browser-hardening
+    network_mode: none
+    volumes:
+      - capstone-results:/results/capstone
+    command: ["python", "capstone/pipeline.py", "--fixture"]
+
+  assignment8-results:
+    <<: *scraper-hardening
+    network_mode: none
+    volumes:
+      - assignment8-results:/results/assignment8:ro
+    command: ["python", "assignment8/view_results.py"]
+
+  capstone-results:
+    <<: *scraper-hardening
+    network_mode: none
+    volumes:
+      - capstone-results:/results/capstone:ro
+    command: ["python", "capstone/view_results.py"]
+
+  capstone-query:
+    <<: *scraper-hardening
+    network_mode: none
+    volumes:
+      - capstone-results:/results/capstone:ro
+    command: ["python", "capstone/query_weather.py", "summary"]
+
+  egress-proxy:
+    profiles: ["live"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.proxy
+    user: "13:13"
+    read_only: true
+    init: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 64
+    mem_limit: 192m
+    cpus: 0.5
+    tmpfs:
+      - /run/squid:rw,nosuid,nodev,noexec,size=8m,uid=13,gid=13
+      - /var/spool/squid:rw,nosuid,nodev,noexec,size=16m,uid=13,gid=13
+      - /var/log/squid:rw,nosuid,nodev,noexec,size=16m,uid=13,gid=13
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,uid=13,gid=13,mode=0700
+    networks: [scrape-internal, proxy-outbound]
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  assignment8-books-live:
+    profiles: ["live"]
+    <<: *browser-hardening
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+    environment: &proxy-environment
+      SCRAPER_PROXY: http://egress-proxy:3128
+      HTTP_PROXY: http://egress-proxy:3128
+      HTTPS_PROXY: http://egress-proxy:3128
+      NO_PROXY: 127.0.0.1,localhost
+    networks: [scrape-internal]
+    volumes:
+      - assignment8-results:/results/assignment8
+    command: ["python", "assignment8/get_books.py", "--live"]
+
+  assignment8-owasp-live:
+    profiles: ["live"]
+    <<: *browser-hardening
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+    environment: *proxy-environment
+    networks: [scrape-internal]
+    volumes:
+      - assignment8-results:/results/assignment8
+    command: ["python", "assignment8/owasp_top_10.py", "--live"]
+
+  capstone-live:
+    profiles: ["live"]
+    <<: *browser-hardening
+    depends_on:
+      egress-proxy:
+        condition: service_healthy
+    environment: *proxy-environment
+    networks: [scrape-internal]
+    volumes:
+      - capstone-results:/results/capstone
+    command: ["python", "capstone/pipeline.py", "--live"]
+
+  dashboard:
+    profiles: ["dashboard"]
+    <<: *scraper-hardening
+    networks: [dashboard-internal]
+    volumes:
+      - capstone-results:/results/capstone:ro
+    command:
+      - streamlit
+      - run
+      - capstone/dashboard.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+      - --browser.gatherUsageStats=false
+    ports:
+      - "127.0.0.1:8501:8501"
+
+networks:
+  scrape-internal:
+    internal: true
+  dashboard-internal:
+    internal: true
+  proxy-outbound: {}
+
+volumes:
+  assignment8-results: {}
+  capstone-results: {}

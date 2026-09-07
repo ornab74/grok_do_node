@@ -1,0 +1,111 @@
+# Challenges
+
+This project ended up being a lot more complicated than I originally expected because web scraping was only one part of the problem. At first I thought most of the challenge would be figuring out the correct HTML elements, CSS selectors, XPath expressions, and then getting Selenium to extract the information I wanted. That was definitely part of it, but once I started running everything inside Docker and trying to make the browser environment more secure and repeatable, the project basically turned into both a web scraping project and a browser security / container engineering project at the same time.
+
+One of the first problems I ran into was that live websites do not stay perfectly consistent. The DOM structure I inspected manually was not always exactly the DOM Selenium saw later. Some of the pages are heavily JavaScript rendered, so content can appear at different times depending on the browser, network speed, or how the website decides to render the page. This meant I could not always assume that because I found an element once in Chrome DevTools that it would immediately exist when Selenium loaded the page. I had to add explicit waits and carefully chosen fallback selectors instead of relying on fixed timing assumptions.
+
+The Durham County Library search was a good example of this problem. The assignment is based around collecting the search results for “learning spanish,” and originally the page appears to represent twenty results per page. However, when I ran the scraper against the current live version of BiblioCommons, Selenium only saw five actual li result elements in the DOM at one time. The page itself still displayed a logical range such as “1 to 20 of 277 results,” which made this pretty confusing at first because it looked like the scraper was somehow missing fifteen books.
+
+After inspecting the current live page more closely, I discovered that BiblioCommons was using a grouped results view. In other words, the website was logically representing more catalog entries while physically exposing a much smaller number of grouped result cards in the DOM. Scrolling the page repeatedly did not suddenly create twenty separate result elements because the site was not simply lazy-loading twenty normal cards. This was an important lesson for me because the number a website displays to the user does not necessarily equal the number of DOM elements Selenium can scrape.
+
+Rather than forcing the script to manufacture twenty results or assume data that was not actually present, I kept the scraper tied to the real DOM. I also expanded it so it could follow the numbered pagination links and continue collecting unique results from additional pages. This ended up working well. Even though an individual page might expose only five grouped result elements, the scraper could continue across page 2, page 3, page 4, and so on, accumulating more unique books as it went.
+
+That pagination logic created another challenge because the site did not provide the simple “Next” link I originally expected. The current BiblioCommons page uses numbered links with labels such as Go to page 2. Because of that, I changed the pagination logic so that it discovers page numbers from the links actually advertised by the website instead of assuming a specific button structure. When necessary, the script can preserve the original search query and construct the immediately following page URL, but it still verifies progression through the site's existing pagination structure.
+
+I also added duplicate detection because scraping across multiple pages can produce repeated titles, authors, or grouped records. Each collected book is converted into a key based on its normalized title, author, and format/year. That allows the scraper to keep collecting across pages without writing duplicate copies of the same record into the final output.
+
+Authors introduced another smaller challenge because one book can contain multiple author links. The assignment specifically requires handling multiple authors, so I collect all matching author elements, normalize the text, remove prefixes such as by, remove duplicates, and then join the authors using semicolons. I also included a narrow fallback selector for cases where the exact author container changes slightly. I tried not to make the fallbacks overly broad because a scraper that just grabs every link or every span on the page can silently produce incorrect data, which is worse than failing clearly.
+
+The OWASP portion had a different DOM challenge. The lesson for the assignment emphasizes using XPath as a way of navigating the document tree rather than simply writing one giant selector containing every possible result. My first approach relied too much on assumptions about the OWASP URL structure. That stopped working when the current OWASP page structure did not match those assumptions.
+
+I rewrote that part so the scraper begins from the exact OWASP Top Ten page required by the assignment, finds the link to the current release, and then uses XPath navigation similar to the lesson examples. The script locates a useful heading, moves to its parent using .., examines following-sibling::* elements, and searches the resulting section for links. Only after reaching the correct area of the page does the script validate the links as A01 through A10. This made the XPath logic much closer to what the course was actually trying to teach instead of simply using XPath as another CSS-selector replacement.
+
+Timing was another issue throughout both scraping tasks. A page loading successfully does not necessarily mean that all of the JavaScript-rendered content is ready. At the same time, constantly hammering a public site with immediate retries would be both unnecessary and irresponsible. To deal with this I added bounded retries, exponential backoff, and randomized timing jitter.
+
+For example, when a page does not load correctly, the script does not immediately retry over and over. It waits progressively longer between attempts and adds a small randomized delay. I also limit the total number of attempts. Between pagination requests, the scraper waits a randomized amount of time instead of requesting every page as fast as the computer can process them. This made the scripts more tolerant of temporary failures while also reducing unnecessary traffic against the websites.
+
+Another important challenge was robots.txt. I wanted the live scraping system to check site policies before performing automated requests. The first version of the security helper attempted to fetch robots.txt using Python's normal HTTP libraries. That worked for some sites but failed on others because some websites treat a basic programmatic HTTP request differently from a real browser request.
+
+The Timeanddate capstone testing exposed this pretty clearly. A direct urllib request to verify robots.txt returned HTTP 403 even though the same resource could be reached through the browser environment. I changed that logic so the robots verification could happen through the same hardened Chromium and proxy path that would later perform the scrape. That allowed the scraper to determine whether the requested path was permitted without simply deleting the robots check because it was inconvenient.
+
+The largest challenge by far, though, was the browser environment itself.
+
+I originally could have just installed Chromium from the operating system package manager and called Selenium against it, but I wanted this project to be more secure and reproducible than that. I ran into concerns around the Chromium build available through the Debian environment, including its patch state and the way Chromium's sandbox interacts with containers. I did not want the security of the entire scraping environment to depend on whatever browser package happened to be installed by default.
+
+Instead, I ended up building a patched Chromium version from source.
+
+That became its own entire project.
+
+Chromium is an enormous codebase, so building it from source is nothing like compiling a normal small application. The complete build took roughly 13 hours on the server. I had to obtain the Chromium source, use the Chromium build tooling, pin the source and related build dependencies, apply the required sandbox/security fix, compile Chromium, package the browser runtime, and then pair it with the matching ChromeDriver.
+
+After spending that long compiling a browser, I definitely did not want every small Python change to cause another thirteen-hour rebuild. I therefore separated the browser runtime from the application layer. The resulting Docker setup keeps the expensive patched Chromium build intact while allowing the Python scraping application layer to be refreshed independently. That means changes to something like get_books.py, owasp_top_10.py, or the capstone pipeline can rebuild quickly without compiling Chromium again.
+
+The hardened browser image uses a specific Chromium and ChromeDriver combination instead of downloading a random driver at runtime. Inside the secure Docker environment the scripts use a common browser helper that points directly to the local /opt/chromium/chrome and /opt/chromium/chromedriver binaries. The helper also verifies that the browser version actually running is the approved version. This prevents the container from silently changing browser versions underneath the scraper.
+
+The submission versions of the Assignment 8 scripts are slightly different because the course rubric specifically asks for webdriver_manager as demonstrated in the lesson. I therefore kept the course-facing version compatible with the rubric while using the locally built Chromium/ChromeDriver inside the hardened Docker testing environment. This let me meet the assignment requirements without throwing away the more secure environment I built for actually testing the scraper.
+
+Running Chromium inside a container introduced another security problem. Browsers are extremely complicated applications, and containerized Chromium does not always get to use its normal Linux sandbox exactly the way it would on a desktop machine. In particular, Docker settings such as no-new-privileges can interact with Chromium's own sandboxing mechanisms.
+
+Instead of solving this by simply running an unrestricted privileged container, I tried to make the entire container boundary compensate for the limitations. The browser runs as a non-root user. The container filesystem is read-only. Linux capabilities are dropped. no-new-privileges is enabled. Process, memory, CPU, and shared-memory limits are defined. Temporary writable filesystems are explicitly mounted only where needed. The browser container also uses a reviewed seccomp policy and an AppArmor profile.
+
+I created a sandbox verification step as well. Every live scraper run prints a sandbox evaluation before the scraper starts. Seeing:
+
+"sandbox": "verified"
+
+became an important part of testing because it confirms that the security environment has not accidentally changed while I am modifying the scraping code.
+
+Networking was another part of the security design. My default browser/test containers do not have normal unrestricted Internet access. Offline fixture testing is intentionally isolated from the network. This makes it possible to test selectors, cleaning code, CSV output, SQLite loading, and browser behavior repeatedly without continuously making requests to public websites.
+
+For actual live scraping I created a separate opt-in live profile.
+
+The live browser still does not receive unrestricted outbound Internet access. Instead, its traffic goes through a Squid egress proxy. That proxy uses a domain allowlist, so only the websites needed by the assignment are reachable. Private address ranges, loopback addresses, metadata endpoints, and other internal network destinations are blocked. This is important because a compromised browser should not automatically be able to explore the server's internal network simply because Selenium needed Internet access.
+
+The allowlisted proxy created its own debugging challenges. During capstone testing against Timeanddate, the browser reached a Cloudflare page saying that the verification process could not complete because of the network configuration. The diagnostic page specifically referenced challenges.cloudflare.com. My proxy initially allowed Timeanddate itself but not the separate Cloudflare verification domain.
+
+I added only the required challenge domain to the allowlist rather than opening unrestricted outbound network access. There was another subtle issue here: Squid's configuration is copied into the proxy Docker image during its build. I initially recreated the container after editing the configuration, but that still left the old configuration inside the existing image. I eventually realized the proxy image itself had to be rebuilt before the new allowlist took effect.
+
+After doing that, Cloudflare's challenge page loaded properly, but the headless automated Chromium session still remained on Just a moment... and never received the actual weather page. I tested this explicitly by waiting in five-second intervals for approximately thirty seconds and checking the page title, table count, and weather links. Every check still showed the Cloudflare verification page.
+
+That distinction was important because initially the weather parser raised weather table was not found. At first that looked like a selector problem. After adding diagnostics, it became obvious that the parser was not actually looking at the weather site's DOM at all. It was looking at Cloudflare's verification page, which naturally contained zero weather tables.
+
+I chose not to start manipulating browser fingerprints, challenge cookies, security settings, or other anti-bot mechanisms just to make the scraper pass the Cloudflare challenge. At that point the problem was no longer normal DOM parsing. The approved capstone website was intentionally placing an automated security challenge in front of the headless server browser.
+
+Fortunately, during earlier development I had already successfully collected weather results from the approved source. Those results were stored inside the Docker named volume used by the capstone pipeline. Because Docker volumes persist independently of temporary scraper containers, the older data survived all of these later debugging attempts.
+
+Finding those results created another Docker lesson. This server actually uses a rootless Docker daemon for the secure scraper under a dedicated chromebuild user. Root's normal Docker daemon and the chromebuild rootless daemon are separate environments, even though they are running on the same DigitalOcean node.
+
+At one point I mounted what appeared to be the correct volume while using root's Docker daemon and found nothing. The volume name looked right, but it belonged to the other daemon. Once I ran Docker through the chromebuild user's runtime socket, the correct volumes appeared.
+
+The recovered capstone volume contained:
+
+weather_raw.csv
+
+weather_clean.csv
+
+weather.db
+
+and
+
+cleaning_stats.json
+
+The raw and cleaned files were still intact, along with the SQLite database produced by the pipeline. The cleaning statistics also confirmed that the recovered run contained nine raw records and nine cleaned records, with zero records removed during cleaning. I immediately made a separate ZIP backup of those files because after spending this much time fighting browsers, containers, proxies, DOM changes, and Cloudflare, losing previously collected data would have been an especially painful ending.
+
+I also added SHA-256 integrity checking to the Docker project. Important project files are recorded in a SHA256SUMS manifest. Whenever the application files change, I verify the hashes before using the environment. This caused a few extra headaches while developing because changing even one Python file intentionally causes the integrity check to fail until its checksum is updated, but that is also exactly the point. It prevents an unexpected change from quietly entering the runtime.
+
+Overall, the main thing I learned from this assignment is that real-world scraping is not just about knowing find_elements().
+
+The actual scraping code is only one layer.
+
+There is the website's changing DOM. There is JavaScript timing. There are grouped results. There is pagination. There are duplicate records. There are missing fields. There are redirects. There are robots.txt rules. There are transient network failures. There are anti-bot systems. There are browser versions. There is Selenium/ChromeDriver compatibility. There is Chromium's sandbox. There are container permissions. There are read-only filesystems. There are Linux security policies. There are Docker volumes. There is rootless Docker. There are network proxies and allowlists. And sometimes there is a thirteen-hour Chromium compile sitting underneath all of it.
+
+The deterministic offline fixtures became especially valuable because of this. Once I had a known fixture, I could test the parsing and data-processing logic without repeatedly touching the real websites. The live runs could then be treated as a separate integration test rather than being the only way to determine whether my program works.
+
+My final setup therefore has two different modes intentionally. The offline/test environment is deterministic and network-isolated so I can repeatedly verify the parser and infrastructure. The live environment is explicitly opt-in and routes the browser through an allowlisted proxy. This gave me a much safer way to experiment with Selenium while still allowing genuine live scraping when the target website permits it.
+
+The project ended up going much further into Docker and Chromium security than I originally planned, but I think that work helped me understand why production scraping systems need more than just a Python script. A scraper is still software receiving complex, untrusted content from the Internet and executing that content inside a full browser engine. Treating that browser as potentially dangerous made the project more difficult, but it also made the final environment much more deliberate.
+
+The biggest challenge was probably accepting that sometimes the correct result of debugging is not “find another selector.” In several cases the scraper really did need another selector or a better XPath. In other cases the issue was pagination, timing, or a stale proxy image. But with the Timeanddate Cloudflare page, the DOM parser was not broken at all. The approved website simply was not giving the automated browser the weather DOM.
+
+Being able to tell the difference between those failure modes was probably the most useful thing I learned from the entire scraping process.
+
+Also i'd like to note: AirHub's grading system gave a rework suggestion stating my code wasn't in the folder with assignment8. Following the instructions for this week's tasks. I placed my Weather Capstone project for this week's Task 7 assignment within it's own repository located here. https://github.com/ornab74/ctd-capstone-weather Hopefully AIRhub can note this and approve my work over there.

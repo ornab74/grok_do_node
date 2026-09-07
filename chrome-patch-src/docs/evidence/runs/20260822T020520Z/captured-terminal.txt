@@ -1,0 +1,280 @@
+ sudo cat /var/log/chrome-patch/install-20260822T020520Z.log
+Chrome Patch secure installer
+Run ID: 20260822T020520Z
+Mode: skip-build
+Ref: codex/hardened-assignment8-capstone
+./.dockerignore: OK
+./.github/workflows/static-security.yml: OK
+./.gitignore: OK
+./Dockerfile: OK
+./LICENSE: OK
+./Makefile: OK
+./README.md: OK
+./SECURITY.md: OK
+./assignment8/challenges.txt: OK
+./assignment8/ethical_scraping.txt: OK
+./assignment8/fixtures/books.html: OK
+./assignment8/fixtures/owasp.html: OK
+./assignment8/get_books.py: OK
+./assignment8/owasp_top_10.py: OK
+./assignment8/tests/verify_outputs.py: OK
+./assignment8/view_results.py: OK
+./capstone/dashboard.py: OK
+./capstone/fixtures/weather.html: OK
+./capstone/pipeline.py: OK
+./capstone/query_weather.py: OK
+./capstone/tests/test_cleaning.py: OK
+./capstone/tests/verify_outputs.py: OK
+./capstone/view_results.py: OK
+./capstone/weather_pipeline.py: OK
+./chromium/build_chromium.sh: OK
+./chromium/package_runtime.py: OK
+./chromium/runtime-image.lock.json: OK
+./chromium/source.lock.json: OK
+./chromium/verify_source_fix.py: OK
+./common/__init__.py: OK
+./common/browser.py: OK
+./common/fixture_server.py: OK
+./common/sandbox_probe.py: OK
+./common/scraping_security.py: OK
+./common/security_gate.py: OK
+./compose.yaml: OK
+./docker/Dockerfile.proxy: OK
+./docker/Dockerfile.runtime-refresh: OK
+./docker/chrome-patch-browser.apparmor: OK
+./docker/chromium-policy.json: OK
+./docker/chromium-seccomp.json: OK
+./docker/entrypoint.py: OK
+./docker/squid.conf: OK
+./docs/DIGITALOCEAN.md: OK
+./docs/FINDING.md: OK
+./docs/REPRODUCIBILITY.md: OK
+./install.sh: OK
+./patch.sh: OK
+./requirements.txt: OK
+./scripts/generate-sha256.sh: OK
+./scripts/ghcr-image.sh: OK
+./scripts/refresh-runtime-image.sh: OK
+./scripts/verify-container.sh: OK
+./scripts/verify-runtime-profiles.py: OK
+./scripts/view-results.sh: OK
+./tests/test_entrypoint.py: OK
+./tests/test_repository_policy.py: OK
+./tests/test_security_gate.py: OK
+./tests/test_source_fix_verifier.py: OK
+
+[CHROME-PATCH] Running local security and unit tests
+test_allowlist_rejects_extra_arguments_and_similar_paths (test_entrypoint.EntrypointCommandPolicyTests.test_allowlist_rejects_extra_arguments_and_similar_paths) ... ok
+test_browser_jobs_require_a_prelaunch_probe (test_entrypoint.EntrypointCommandPolicyTests.test_browser_jobs_require_a_prelaunch_probe) ... ok
+test_exact_non_browser_commands_skip_the_dynamic_probe (test_entrypoint.EntrypointCommandPolicyTests.test_exact_non_browser_commands_skip_the_dynamic_probe) ... ok
+test_probe_command_does_not_recursively_probe (test_entrypoint.EntrypointCommandPolicyTests.test_probe_command_does_not_recursively_probe) ... ok
+test_both_coursework_folders_are_wired_into_compose (test_repository_policy.RepositoryPolicyTests.test_both_coursework_folders_are_wired_into_compose) ... ok
+test_chromium_policy_blocks_local_file_and_download_access (test_repository_policy.RepositoryPolicyTests.test_chromium_policy_blocks_local_file_and_download_access) ... ok
+test_compose_keeps_the_host_boundary_closed (test_repository_policy.RepositoryPolicyTests.test_compose_keeps_the_host_boundary_closed) ... ok
+test_dockerfile_does_not_install_debian_chromium (test_repository_policy.RepositoryPolicyTests.test_dockerfile_does_not_install_debian_chromium) ... ok
+test_installer_bootstraps_a_pinned_rootless_builder (test_repository_policy.RepositoryPolicyTests.test_installer_bootstraps_a_pinned_rootless_builder) ... ok
+test_installer_checks_integrity_before_docker (test_repository_policy.RepositoryPolicyTests.test_installer_checks_integrity_before_docker) ... ok
+test_pinned_ghcr_runtime_is_reproducible_and_secret_free (test_repository_policy.RepositoryPolicyTests.test_pinned_ghcr_runtime_is_reproducible_and_secret_free) ... ok
+test_proxy_allowlist_and_private_address_denial (test_repository_policy.RepositoryPolicyTests.test_proxy_allowlist_and_private_address_denial) ... ok
+test_repository_sha256_manifest_is_complete_and_valid (test_repository_policy.RepositoryPolicyTests.test_repository_sha256_manifest_is_complete_and_valid) ... ok
+test_runtime_browser_code_has_no_sandbox_bypass (test_repository_policy.RepositoryPolicyTests.test_runtime_browser_code_has_no_sandbox_bypass) ... ok
+test_runtime_profiles_are_narrow_and_self_validating (test_repository_policy.RepositoryPolicyTests.test_runtime_profiles_are_narrow_and_self_validating) ... ok
+test_security_scripts_are_executable (test_repository_policy.RepositoryPolicyTests.test_security_scripts_are_executable) ... ok
+test_source_build_applies_and_tests_the_fix (test_repository_policy.RepositoryPolicyTests.test_source_build_applies_and_tests_the_fix) ... ok
+test_source_lock_matches_runtime_and_dependencies (test_repository_policy.RepositoryPolicyTests.test_source_lock_matches_runtime_and_dependencies) ... ok
+test_forbidden_switches_are_rejected (test_security_gate.SecurityGateTests.test_forbidden_switches_are_rejected) ... ok
+test_hash_manifest_detects_tampering (test_security_gate.SecurityGateTests.test_hash_manifest_detects_tampering) ... ok
+test_metadata_requires_exact_version_and_fix (test_security_gate.SecurityGateTests.test_metadata_requires_exact_version_and_fix) ... ok
+test_unsafe_environment_is_rejected (test_security_gate.SecurityGateTests.test_unsafe_environment_is_rejected) ... ok
+test_version_parser_requires_four_parts (test_security_gate.SecurityGateTests.test_version_parser_requires_four_parts) ... ok
+test_missing_broker_regression_suite_is_rejected (test_source_fix_verifier.SourceVerifierTests.test_missing_broker_regression_suite_is_rejected) ... ok
+test_parent_and_self_validator_with_regression_is_accepted (test_source_fix_verifier.SourceVerifierTests.test_parent_and_self_validator_with_regression_is_accepted) ... ok
+test_vulnerable_parent_only_validator_is_rejected (test_source_fix_verifier.SourceVerifierTests.test_vulnerable_parent_only_validator_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.083s
+
+OK
+Docker Compose version v5.5.0
+Docker endpoint: unix:///run/user/1000/docker.sock
+WARNING: No cpuset support
+WARNING: No io.weight support
+WARNING: No io.weight (per device) support
+WARNING: No io.max (rbps) support
+WARNING: No io.max (wbps) support
+WARNING: No io.max (riops) support
+WARNING: No io.max (wiops) support
+
+[CHROME-PATCH] Verifying and refreshing the existing local image
+Chromium 151.0.7922.169 
+ChromeDriver 151.0.7922.169 (4b1c7520055f77780fe76d89bb89b76e4d19f64c-refs/branch-heads/7922@{#3240})
+Local image verified: secure-scraper-chromium:151.0.7922.169-patched (sha256:dd004096f15e25c71a7558a1cf772046f25a40dbd74d770d95b3611fa57240c8)
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.runtime-refresh
+#1 transferring dockerfile: 908B done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#2 DONE 0.2s
+
+#3 docker-image://docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+#3 resolve docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e 0.0s done
+#3 CACHED
+
+#4 [internal] load metadata for docker.io/library/chrome-patch-restored-base:20260822020526
+#4 DONE 0.1s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 117B done
+#5 DONE 0.0s
+
+#6 [1/7] FROM docker.io/library/chrome-patch-restored-base:20260822020526@sha256:dd004096f15e25c71a7558a1cf772046f25a40dbd74d770d95b3611fa57240c8
+#6 resolve docker.io/library/chrome-patch-restored-base:20260822020526@sha256:dd004096f15e25c71a7558a1cf772046f25a40dbd74d770d95b3611fa57240c8 0.0s done
+#6 DONE 0.1s
+
+#7 [internal] load build context
+#7 transferring context: 237.20kB 0.0s done
+#7 DONE 0.0s
+
+#8 [2/7] WORKDIR /app
+#8 DONE 0.0s
+
+#9 [3/7] COPY requirements.txt /tmp/chrome-patch-requirements.txt
+#9 DONE 0.0s
+
+#10 [4/7] RUN cmp --silent /app/requirements.txt /tmp/chrome-patch-requirements.txt  && rm -f /tmp/chrome-patch-requirements.txt  && rm -rf /app  && install -d -m 0755 -o 10001 -g 10001 /app
+#10 DONE 0.3s
+
+#11 [5/7] COPY --chown=10001:10001 . /app
+#11 DONE 0.1s
+
+#12 [6/7] COPY docker/chromium-policy.json /etc/chromium/policies/managed/scraper.json
+#12 DONE 0.0s
+
+#13 [7/7] RUN chmod -R go-w /opt/chromium  && chown -R 10001:10001 /app
+#13 DONE 3.1s
+
+#14 exporting to image
+#14 exporting layers
+#14 exporting layers 0.3s done
+#14 exporting manifest sha256:4692f5faced10c1dd32c1b1ed9823ad5f75cbb2700280cae43419237d5075ce9 0.0s done
+#14 exporting config sha256:bcd2cdc6537efa90af4f1818ad0e611baa06408d7196c83b141798ec384ab9cf 0.0s done
+#14 exporting attestation manifest sha256:3acc25f87aa184d9528a9652e7206c1a120293c1b33397c9d351abc589cca1d2 0.0s done
+#14 exporting manifest list sha256:d48713a93001dccb5ecc771d41cfbcf7aafbef67fd35e58901c770dcec15cee1 0.0s done
+#14 naming to docker.io/library/secure-scraper-chromium:151.0.7922.169-patched done
+#14 unpacking to docker.io/library/secure-scraper-chromium:151.0.7922.169-patched
+#14 unpacking to docker.io/library/secure-scraper-chromium:151.0.7922.169-patched 0.2s done
+#14 DONE 0.6s
+WARNING: current commit information was not captured by the build: failed to read current commit information with git rev-parse --is-inside-work-tree
+Refreshed application layer without rebuilding Chromium: secure-scraper-chromium:151.0.7922.169-patched
+Chromium 151.0.7922.169 
+ChromeDriver 151.0.7922.169 (4b1c7520055f77780fe76d89bb89b76e4d19f64c-refs/branch-heads/7922@{#3240})
+Local image verified: secure-scraper-chromium:151.0.7922.169-patched (sha256:d48713a93001dccb5ecc771d41cfbcf7aafbef67fd35e58901c770dcec15cee1)
+
+[CHROME-PATCH] Auditing sandbox and running both projects
+ Container chrome-patch-browser-audit-run-c47253534ffa Creating 
+ Container chrome-patch-browser-audit-run-c47253534ffa Created 
+nested-user-namespace=passed
+ Container chrome-patch-browser-audit-run-c6f24dd64816 Creating 
+ Container chrome-patch-browser-audit-run-c6f24dd64816 Created 
+{"evaluation": "You are adequately sandboxed.", "required_checks": {"Layer 1 Sandbox": "Namespace", "Network namespaces": "Yes", "PID namespaces": "Yes", "Seccomp-BPF sandbox": "Yes"}, "sandbox": "verified"}
+ Container chrome-patch-test-run-73b0fa298872 Creating 
+ Container chrome-patch-test-run-73b0fa298872 Created 
+{"evaluation": "You are adequately sandboxed.", "required_checks": {"Layer 1 Sandbox": "Namespace", "Network namespaces": "Yes", "PID namespaces": "Yes", "Seccomp-BPF sandbox": "Yes"}, "sandbox": "verified"}
+...........................             [100%]
+27 passed, 33 subtests passed in 1.00s
+                                           Title                Author     Format-Year
+Practice Makes Perfect: Complete Spanish Grammar      Gilda Nissenberg      Book, 2024
+                       Easy Spanish Step-by-Step     Barbara Bregstein     eBook, 2023
+                            Spanish Conversation Jean Yates; Ana Lopez Audiobook, 2022
+Wrote /results/assignment8/get_books.csv and /results/assignment8/get_books.json
+Wrote /results/assignment8/owasp_top_10.csv
+Output verification passed: 3 books, 10 unique OWASP risks.
+Wrote 9 raw rows, 9 clean rows, and 9 database rows.
+Results directory: /results/capstone
+Output verification passed: 9 fixture observations in CSV and SQLite.
+ Container chrome-patch-assignment8-results-run-78ca15e580a0 Creating 
+ Container chrome-patch-assignment8-results-run-78ca15e580a0 Created 
+
+=== get_books.csv ===
+Title,Author,Format-Year
+Practice Makes Perfect: Complete Spanish Grammar,Gilda Nissenberg,"Book, 2024"
+Easy Spanish Step-by-Step,Barbara Bregstein,"eBook, 2023"
+Spanish Conversation,Jean Yates; Ana Lopez,"Audiobook, 2022"
+
+=== get_books.json ===
+[
+  {
+    "Title": "Practice Makes Perfect: Complete Spanish Grammar",
+    "Author": "Gilda Nissenberg",
+    "Format-Year": "Book, 2024"
+  },
+  {
+    "Title": "Easy Spanish Step-by-Step",
+    "Author": "Barbara Bregstein",
+    "Format-Year": "eBook, 2023"
+  },
+  {
+    "Title": "Spanish Conversation",
+    "Author": "Jean Yates; Ana Lopez",
+    "Format-Year": "Audiobook, 2022"
+  }
+]
+
+=== owasp_top_10.csv ===
+title,href
+A01:2025 Broken Access Control,https://owasp.org/Top10/A01_2025-Broken_Access_Control/
+A02:2025 Security Misconfiguration,https://owasp.org/Top10/A02_2025-Security_Misconfiguration/
+A03:2025 Software Supply Chain Failures,https://owasp.org/Top10/A03_2025-Software_Supply_Chain_Failures/
+A04:2025 Cryptographic Failures,https://owasp.org/Top10/A04_2025-Cryptographic_Failures/
+A05:2025 Injection,https://owasp.org/Top10/A05_2025-Injection/
+A06:2025 Insecure Design,https://owasp.org/Top10/A06_2025-Insecure_Design/
+A07:2025 Authentication Failures,https://owasp.org/Top10/A07_2025-Authentication_Failures/
+A08:2025 Software or Data Integrity Failures,https://owasp.org/Top10/A08_2025-Software_or_Data_Integrity_Failures/
+A09:2025 Security Logging and Alerting Failures,https://owasp.org/Top10/A09_2025-Security_Logging_and_Alerting_Failures/
+A10:2025 Mishandling of Exceptional Conditions,https://owasp.org/Top10/A10_2025-Mishandling_of_Exceptional_Conditions/
+ Container chrome-patch-capstone-results-run-dc92cc9faf4b Creating 
+ Container chrome-patch-capstone-results-run-dc92cc9faf4b Created 
+cleaning_stats.json: 59 bytes
+{
+  "raw_rows": 9,
+  "clean_rows": 9,
+  "removed_rows": 0
+}
+
+weather.db: 16384 bytes
+weather_clean.csv: 1253 bytes
+city,observed_local,condition,temperature_raw,source_url,scraped_at_utc,temperature_c,temperature_f,temperature_band
+Dubai,Thu 22:00,Clear,38 °C,https://www.timeanddate.com/weather/uae/dubai,2026-08-22T02:05:56+00:00,38.0,100.4,hot
+Tokyo,Fri 03:00,Clear,31 °C,https://www.timeanddate.com/weather/japan/tokyo,2026-08-22T02:05:56+00:00,31.0,87.8,hot
+Rio de Janeiro,Thu 15:00,Sunny,29 °C,https://www.timeanddate.com/weather/brazil/rio-de-janeiro,2026-08-22T02:05:56+00:00,29.0,84.2,warm
+New York,Thu 14:00,Partly sunny,27 °C,https://www.timeanddate.com/weather/usa/new-york,2026-08-22T02:05:56+00:00,27.0,80.6,warm
+Toronto,Thu 14:00,Passing clouds,24 °C,https://www.timeanddate.com/weather/canada/toronto,2026-08-22T02:05:56+00:00,24.0,75.2,warm
+Nairobi,Thu 21:00,Overcast,20 °C,https://www.timeanddate.com/weather/kenya/nairobi,2026-08-22T02:05:56+00:00,20.0,68.0,warm
+London,Thu 19:00,Light rain,18 °C,https://www.timeanddate.com/weather/uk/london,2026-08-22T02:05:56+00:00,18.0,64.4,mild
+Sydney,Fri 04:00,Sunny,16 °C,https://www.timeanddate.com/weather/australia/sydney,2026-08-22T02:05:56+00:00,16.0,60.8,mild
+Cape Town,Thu 20:00,Cloudy,13 °C,https://www.timeanddate.com/weather/south-africa/cape-town,2026-08-22T02:05:56+00:00,13.0,55.4,mild
+
+weather_raw.csv: 1090 bytes
+city,observed_local,condition,temperature_raw,source_url,scraped_at_utc
+New York *,Thu 14:00,Partly sunny,27 °C,https://www.timeanddate.com/weather/usa/new-york,2026-08-22T02:05:56+00:00
+London *,Thu 19:00,Light rain,18 °C,https://www.timeanddate.com/weather/uk/london,2026-08-22T02:05:56+00:00
+Tokyo,Fri 03:00,Clear,31 °C,https://www.timeanddate.com/weather/japan/tokyo,2026-08-22T02:05:56+00:00
+Sydney,Fri 04:00,Sunny,16 °C,https://www.timeanddate.com/weather/australia/sydney,2026-08-22T02:05:56+00:00
+Cape Town,Thu 20:00,Cloudy,13 °C,https://www.timeanddate.com/weather/south-africa/cape-town,2026-08-22T02:05:56+00:00
+Dubai,Thu 22:00,Clear,38 °C,https://www.timeanddate.com/weather/uae/dubai,2026-08-22T02:05:56+00:00
+Toronto *,Thu 14:00,Passing clouds,24 °C,https://www.timeanddate.com/weather/canada/toronto,2026-08-22T02:05:56+00:00
+Rio de Janeiro,Thu 15:00,Sunny,29 °C,https://www.timeanddate.com/weather/brazil/rio-de-janeiro,2026-08-22T02:05:56+00:00
+Nairobi,Thu 21:00,Overcast,20 °C,https://www.timeanddate.com/weather/kenya/nairobi,2026-08-22T02:05:56+00:00
+
+ Container chrome-patch-capstone-query-run-30308803874b Creating 
+ Container chrome-patch-capstone-query-run-30308803874b Created 
+cities | min_c | avg_c | max_c
+-------+-------+-------+------
+9      | 13.0  | 24.0  | 38.0 
+
+FULL VALIDATION PASSED
+Full log: /var/log/chrome-patch/install-20260822T020520Z.log
+Test output: /var/lib/chrome-patch/results/20260822T020520Z
+Root view command: chrome-patch-results
