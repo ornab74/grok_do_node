@@ -237,3 +237,16 @@ acl approved_domains dstdomain grok.com x.ai challenges.cloudflare.com
 ```
 
 The parent domains cover their xAI/Grok subdomains, including `accounts.x.ai`.
+
+## V8.4 clean-clone integrity fix
+
+The bundle manifest intentionally excludes Python `__pycache__` directories and
+`.pyc`/`.pyo` files. Those files are interpreter-specific transient artifacts,
+not source inputs. `install.sh` removes any such cache files before validating
+the immutable bundle and rejects any manifest that attempts to list them.
+
+For a checkout affected by the older manifest bug:
+
+```bash
+sudo ./repair_pycache_manifest_v8_4.sh
+```

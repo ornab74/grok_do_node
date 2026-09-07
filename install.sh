@@ -87,9 +87,25 @@ EOF_DOCKERIGNORE
   printf 'Restored missing ./.dockerignore and verified sha256=%s\n' "$actual"
 }
 
+scrub_transient_python_bytecode(){
+  # Python bytecode is host/interpreter-specific transient state. It must never
+  # participate in the immutable source manifest or influence imports during
+  # installation.
+  find "$SCRIPT_DIR" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete 2>/dev/null || true
+  find "$SCRIPT_DIR" -depth -type d -name '__pycache__' -empty -delete 2>/dev/null || true
+}
+
+reject_transient_manifest_entries(){
+  if grep -Eq '(^|/)(__pycache__/|[^/]+\.py[co]([[:space:]]|$))' "$SCRIPT_DIR/SHA256SUMS"; then
+    die 'bundle SHA256SUMS illegally contains transient Python bytecode/cache entries'
+  fi
+}
+
 verify_bundle(){
   PHASE="bundle-integrity"
   [[ -f "$SCRIPT_DIR/SHA256SUMS" ]] || die 'bundle SHA256SUMS is missing'
+  scrub_transient_python_bytecode
+  reject_transient_manifest_entries
   restore_canonical_dockerignore_if_missing
   (cd "$SCRIPT_DIR" && sha256sum --check --strict SHA256SUMS)
   [[ -f "$SOURCE_DIR/SHA256SUMS" ]] || die 'bundled chrome-patch source snapshot is missing'
