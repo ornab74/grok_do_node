@@ -227,3 +227,13 @@ that converted the canonical `HASH  ./path` checksum line into `HASH ./path` for
 three updated files, causing `sha256sum --check --strict` to report three
 improperly formatted lines. V8.1 restores those entries in canonical GNU
 sha256sum format and preserves unrelated manifest lines verbatim.
+
+## V8.3 Squid ACL fix
+
+Squid 5.7 rejects overlapping `dstdomain` entries. The Grok/xAI egress ACL is:
+
+```text
+acl approved_domains dstdomain grok.com x.ai challenges.cloudflare.com
+```
+
+The parent domains cover their xAI/Grok subdomains, including `accounts.x.ai`.
