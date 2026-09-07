@@ -1,0 +1,8 @@
+chrome-patch-src
+refresh-context
+security
+README.md
+install.sh
+SHA256SUMS
+*.zip
+*.tar.gz
