@@ -60,9 +60,37 @@ hardware_preflight(){
   (( disk >= MIN_DISK_MIB )) || die "need at least ${MIN_DISK_MIB} MiB free disk"
 }
 
+restore_canonical_dockerignore_if_missing(){
+  local f="$SCRIPT_DIR/.dockerignore" expected actual
+  [[ -e "$f" ]] && return 0
+
+  # Some Git-based transports can accidentally omit this root dotfile while
+  # leaving SHA256SUMS intact. Recreate only the one canonical build-control
+  # file, then verify it against the manifest before trusting the bundle.
+  expected="$(awk '$2 == "./.dockerignore" {print $1}' "$SCRIPT_DIR/SHA256SUMS")"
+  [[ "$expected" == "9e98387b577bed5d55ca41bc334eef7c2bdb0368bf91a8890fd476e00152745e" ]] \
+    || die 'manifest does not contain the expected canonical .dockerignore hash'
+
+  cat >"$f" <<'EOF_DOCKERIGNORE'
+chrome-patch-src
+refresh-context
+security
+README.md
+install.sh
+SHA256SUMS
+*.zip
+*.tar.gz
+EOF_DOCKERIGNORE
+  chmod 600 "$f"
+  actual="$(sha256sum "$f" | awk '{print $1}')"
+  [[ "$actual" == "$expected" ]] || die 'failed to reconstruct canonical .dockerignore'
+  printf 'Restored missing ./.dockerignore and verified sha256=%s\n' "$actual"
+}
+
 verify_bundle(){
   PHASE="bundle-integrity"
   [[ -f "$SCRIPT_DIR/SHA256SUMS" ]] || die 'bundle SHA256SUMS is missing'
+  restore_canonical_dockerignore_if_missing
   (cd "$SCRIPT_DIR" && sha256sum --check --strict SHA256SUMS)
   [[ -f "$SOURCE_DIR/SHA256SUMS" ]] || die 'bundled chrome-patch source snapshot is missing'
 }
@@ -344,6 +372,8 @@ build_and_audit(){
   PHASE="compose-audit"
   run_as_service bash -lc "cd '$APP_DIR' && docker compose -f compose.yaml config --quiet"
   run_as_service bash -lc "cd '$APP_DIR' && docker compose -f compose.yaml build egress-proxy"
+  log 'Squid policy parse test under the runtime service'
+  run_as_service bash -lc "cd '$APP_DIR' && docker compose -f compose.yaml run --rm --no-deps --entrypoint /usr/sbin/squid egress-proxy -k parse -f /etc/squid/squid.conf"
   run_as_service bash -lc "cd '$APP_DIR' && docker compose -f compose.yaml run --rm vault-init >/dev/null"
 
   log 'Nested user-namespace preflight'
@@ -379,6 +409,13 @@ set -Eeuo pipefail
 exec runuser -u $SERVICE_USER -- env HOME=$SERVICE_HOME USER=$SERVICE_USER LOGNAME=$SERVICE_USER XDG_RUNTIME_DIR=$RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=unix:path=$RUNTIME_DIR/bus DOCKER_HOST=$ROOTLESS_DOCKER_HOST PATH=/usr/local/bin:/usr/bin:/bin:$SERVICE_HOME/bin bash -lc "cd '$APP_DIR' && docker compose -f compose.yaml ps && echo && docker info --format '{{json .SecurityOptions}}'"
 WRAP
 
+  cat > /usr/local/bin/grok-proxy-logs <<WRAP
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ \${EUID} -eq 0 ]] || { echo 'run as root: sudo grok-proxy-logs' >&2; exit 1; }
+exec runuser -u $SERVICE_USER -- env HOME=$SERVICE_HOME USER=$SERVICE_USER LOGNAME=$SERVICE_USER XDG_RUNTIME_DIR=$RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=unix:path=$RUNTIME_DIR/bus DOCKER_HOST=$ROOTLESS_DOCKER_HOST PATH=/usr/local/bin:/usr/bin:/bin:$SERVICE_HOME/bin bash -lc "cd '$APP_DIR' && docker compose -f compose.yaml logs --no-color --tail=200 egress-proxy"
+WRAP
+
   cat > /usr/local/bin/grok-stop <<WRAP
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -400,7 +437,7 @@ echo "Encrypted vault backup: \$out"
 sha256sum "\$out"
 WRAP
 
-  chmod 0755 /usr/local/bin/grok-tui /usr/local/bin/grok-audit /usr/local/bin/grok-status /usr/local/bin/grok-stop /usr/local/bin/grok-vault-backup
+  chmod 0755 /usr/local/bin/grok-tui /usr/local/bin/grok-audit /usr/local/bin/grok-status /usr/local/bin/grok-proxy-logs /usr/local/bin/grok-stop /usr/local/bin/grok-vault-backup
 }
 
 main(){
@@ -422,6 +459,7 @@ main(){
     'Start:          sudo grok-tui' \
     'Sandbox audit:  sudo grok-audit' \
     'Status:         sudo grok-status' \
+    'Proxy logs:     sudo grok-proxy-logs' \
     'Stop proxy:     sudo grok-stop' \
     'Vault backup:   sudo grok-vault-backup'
 }

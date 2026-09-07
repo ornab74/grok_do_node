@@ -35,12 +35,19 @@ services:
     user: "0:0"
     network_mode: none
     cap_drop: [ALL]
-    cap_add: [CHOWN, FOWNER]
+    # Rootless container root is mapped and intentionally has almost no
+    # capabilities. DAC_OVERRIDE is needed only by this network-less,
+    # short-lived init helper so it can repair/traverse a pre-existing vault
+    # whose top directory is already mode 0700 and owned by UID 10001.
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     volumes:
       - grok-vault:/vault
-    command: ["/bin/sh", "-ec", "mkdir -p /vault/profiles; chown -R 10001:10001 /vault; chmod 0700 /vault /vault/profiles"]
+    # Never chmod the parent first: after chowning it to 10001, container UID 0
+    # would otherwise lose traversal without DAC_OVERRIDE. Touch directories
+    # only; existing encrypted vault files remain owned by the TUI user.
+    command: ["/bin/sh", "-ec", "mkdir -p /vault/profiles; chown 10001:10001 /vault /vault/profiles; chmod 0700 /vault/profiles; chmod 0700 /vault"]
 
   browser-audit:
     <<: *vault-browser

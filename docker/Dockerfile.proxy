@@ -3,5 +3,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates squid \
  && rm -rf /var/lib/apt/lists/*
 COPY docker/squid-grok.conf /etc/squid/squid.conf
+# Fail the image build if the packaged Squid cannot parse our policy.
+RUN /usr/sbin/squid -k parse -f /etc/squid/squid.conf
 USER 13:13
-ENTRYPOINT ["/usr/sbin/squid", "-NYCd", "1"]
+ENTRYPOINT ["/usr/sbin/squid", "-N", "-C", "-d", "1", "-f", "/etc/squid/squid.conf"]

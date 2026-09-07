@@ -178,3 +178,52 @@ No application port is published by this stack. Restrict the DigitalOcean Cloud 
 ## Updating
 
 The Chromium runtime is deliberately digest-pinned. Do not replace the digest with `latest`. Updating Chromium/security policy should be treated as a reviewed change: update the immutable digest, source snapshot/policies, regenerate bundle checksums, and rerun `sudo grok-audit`.
+
+## V6 Git-clone dotfile repair
+
+If a Git clone contains `SHA256SUMS` but is missing the root `.dockerignore`, V6 `install.sh`
+reconstructs only that canonical file and verifies its fixed SHA-256 before the full bundle
+integrity check. For an older checkout, run `./fix_missing_dockerignore.sh` and then rerun
+`sudo ./install.sh`. The installer still fails closed if an existing `.dockerignore` differs.
+
+## V7: rootless vault initialization fix
+
+V7 fixes an ownership-order bug in the one-shot `vault-init` helper. In V6 the
+helper chowned `/vault` to UID 10001 and then chmodded `/vault` before
+`/vault/profiles`. Because the helper had dropped `CAP_DAC_OVERRIDE`, changing
+the parent to mode 0700 could make the child path unreachable to container UID
+0 during the same command. V7 grants `DAC_OVERRIDE` only to the network-less,
+short-lived init helper and chmods the child before the parent. The browser/TUI
+containers receive no additional capability.
+
+If a V6 install already failed with `chmod: cannot access '/vault/profiles':
+Permission denied`, use the V7 bundle or run `sudo ./repair_v6_vault_init.sh`
+from the V6 source directory after copying the helper there.
+
+
+## V8 proxy startup fix
+
+V8 removes the obsolete `cache_dir null` directive. Modern Squid needs no
+`cache_dir` when `cache deny all` is used, and Debian's packaged Squid does not
+build the legacy null store module by default. The proxy image now runs
+`squid -k parse` during build, the installer repeats the parse under the
+runtime service, and `grok-tui` prints Squid logs if the proxy cannot become
+healthy. Use `sudo grok-proxy-logs` for the last 200 proxy log lines.
+
+For an already-installed V7 node whose `egress-proxy` exits immediately, copy
+`repair_proxy_v8.sh` into the checkout and run:
+
+```bash
+chmod +x repair_proxy_v8.sh
+sudo ./repair_proxy_v8.sh
+sudo grok-tui
+```
+
+`sudo grok-proxy-logs` prints the proxy's last 200 log lines.
+
+## V8.1 manifest repair
+V8.1 fixes the V8 `repair_proxy_v8.sh` manifest updater. V8 used an awk rewrite
+that converted the canonical `HASH  ./path` checksum line into `HASH ./path` for
+three updated files, causing `sha256sum --check --strict` to report three
+improperly formatted lines. V8.1 restores those entries in canonical GNU
+sha256sum format and preserves unrelated manifest lines verbatim.
