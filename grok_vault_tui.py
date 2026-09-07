@@ -36,6 +36,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 
+from ascii_browser import AsciiBrowser
 from common.browser import browser_arguments
 from common.security_gate import APPROVED_VERSION, SecurityGateError
 
@@ -53,7 +54,7 @@ NONCE_BYTES = 12
 SCRYPT_N = 2 ** 17
 SCRYPT_R = 8
 SCRYPT_P = 1
-APP_VERSION = "6.0-from-scratch"
+APP_VERSION = "8.9-ascii-chromium"
 
 COMPOSER_SELECTORS = (
     (By.CSS_SELECTOR, '[data-testid="chat-input"] div.ProseMirror[role="textbox"]'),
@@ -73,6 +74,11 @@ class VaultError(RuntimeError):
 
 
 class GrokUiError(RuntimeError):
+    pass
+
+
+class HumanVerificationRequired(GrokUiError):
+    """Raised when xAI/Cloudflare presents an anti-bot human-verification page."""
     pass
 
 
@@ -435,10 +441,37 @@ class AccountSession:
         except TimeoutException:
             return None
 
-    def _captcha_guard(self) -> None:
+    def human_verification_required(self) -> bool:
         body = self._body().lower()
-        if any(s in body for s in ("verify you are human", "captcha", "cloudflare", "security check")):
-            raise GrokUiError("xAI/Cloudflare requested human verification. This client will not bypass CAPTCHA or anti-bot checks.")
+        return any(
+            marker in body
+            for marker in ("verify you are human", "captcha", "cloudflare", "security check")
+        )
+
+    def verification_metadata(self) -> dict:
+        title = ""
+        url = ""
+        try:
+            title = self.driver.title or ""
+        except Exception:
+            pass
+        try:
+            url = self.driver.current_url or ""
+        except Exception:
+            pass
+        return {
+            "required": self.human_verification_required(),
+            "composer": bool(self.composer()),
+            "title": title,
+            "url": url,
+        }
+
+    def _captcha_guard(self) -> None:
+        if self.human_verification_required():
+            raise HumanVerificationRequired(
+                "xAI/Cloudflare requested human verification. "
+                "The TUI can monitor this state but will not click or solve the anti-bot challenge."
+            )
 
     def _first_input(self, kinds: tuple[str, ...]):
         selectors = []
@@ -562,8 +595,10 @@ class AccountSession:
         raise GrokUiError(f"registration did not reach an authenticated Grok composer (url={self.driver.current_url!r})")
 
     def login(self, email: str, password: str | None, ask_secret: Callable[[str], str], progress: Callable[[str], None]) -> None:
+        progress("Checking this account's encrypted browser session...")
         self.driver.get(GROK_URL)
         if self.wait_composer(timeout=8):
+            progress("Existing Grok session is authenticated.")
             return
         progress("Session needs authentication; opening xAI email sign-in...")
         self.driver.get(SIGNIN_URL)
@@ -727,6 +762,91 @@ class App:
         self.status = text
         self.center([text, "", "Browser activity stays on the DigitalOcean node."], "GROK VAULT / WORKING")
 
+    def notice(self, title: str, text: str) -> None:
+        _h, w = self.s.getmaxyx()
+        width = max(24, min(92, w - 8))
+        wrapped = textwrap.wrap(str(text), width=width, replace_whitespace=False) or [""]
+        self.center(wrapped + ["", "Press any key."], title)
+        self.s.get_wch()
+
+    def ascii_browser(self, session: AccountSession, account: dict) -> None:
+        alias = account.get("alias", "account")
+        self.status = f"ASCII Chromium active for {alias}."
+        browser = AsciiBrowser(
+            self.s,
+            session.driver,
+            prompt=lambda label: self.prompt(label),
+            status=lambda text: setattr(self, "status", text),
+        )
+        browser.run()
+
+    def verification_supervisor(self, session: AccountSession, account: dict) -> bool:
+        """
+        TUI-only verification monitor.
+
+        This does not click, focus, or otherwise manipulate a CAPTCHA/anti-bot
+        control. It only observes the existing browser session and reports when
+        the challenge is no longer present or the Grok composer becomes ready.
+        """
+        alias = account.get("alias", "account")
+        old_timeout = -1
+        try:
+            self.s.timeout(1500)
+            while True:
+                meta = session.verification_metadata()
+                verified = bool(meta.get("composer"))
+                required = bool(meta.get("required"))
+
+                box = "[x]" if verified else "[ ]"
+                state = (
+                    "VERIFIED — Grok composer is ready."
+                    if verified
+                    else "Human verification is still pending."
+                    if required
+                    else "Challenge page changed; waiting for authenticated Grok composer."
+                )
+
+                lines = [
+                    f"{box} Human verification",
+                    "",
+                    f"Account: {alias}",
+                    f"State: {state}",
+                    f"Title: {meta.get('title','')[:100]}",
+                    f"URL: {meta.get('url','')[:140]}",
+                    "",
+                    "This screen is observation-only.",
+                    "It does not click or solve anti-bot controls.",
+                    "",
+                    "B  open full ASCII Chromium view",
+                    "R  recheck now",
+                    "Esc  cancel and securely save the profile",
+                ]
+                self.center(lines, "GROK VAULT / VERIFICATION MONITOR")
+
+                if verified:
+                    self.status = f"Verification cleared for {alias}; Grok composer detected."
+                    time.sleep(0.8)
+                    return True
+
+                try:
+                    ch = self.s.get_wch()
+                except curses.error:
+                    ch = None
+
+                if isinstance(ch, str):
+                    if ch == "\x1b":
+                        self.status = f"Verification still pending for {alias}."
+                        return False
+                    if ch.lower() == "b":
+                        self.s.timeout(-1)
+                        self.ascii_browser(session, account)
+                        self.s.timeout(1500)
+                        continue
+                    if ch.lower() == "r":
+                        continue
+        finally:
+            self.s.timeout(-1)
+
     def ask_secret(self, label: str) -> str:
         return self.prompt(label + " (input is not stored unless it is the account password)", secret=True)
 
@@ -746,7 +866,14 @@ class App:
                 lines.append(f"{mark}{active} {a['alias']:<18} {masked:<30} {a.get('status','?')}")
             if not accounts:
                 lines.append("No accounts stored.")
-            lines += ["", "N register new   I import existing   Enter select   L login/test", "R reveal selected credentials   D delete   P change vault passphrase", "Esc back"]
+            lines += [
+                "",
+                f"Status: {self.status}",
+                "",
+                "N register new   I import existing   Enter select   L login/test",
+                "R reveal selected credentials   D delete   P change vault passphrase",
+                "Esc back",
+            ]
             self.center(lines, "GROK VAULT / ACCOUNTS")
             ch = self.s.get_wch()
             if ch == curses.KEY_UP and accounts:
@@ -763,8 +890,12 @@ class App:
                     self.register_account()
                 elif ch.lower() == "i":
                     self.import_account()
-                elif ch.lower() == "l" and accounts:
-                    self.login_test(accounts[idx])
+                elif ch.lower() == "l":
+                    if accounts:
+                        self.login_test(accounts[idx])
+                    else:
+                        self.status = "No account exists yet. Press N to register or I to import."
+                        self.notice("GROK VAULT / LOGIN", self.status)
                 elif ch.lower() == "r" and accounts:
                     self.reveal_credentials(accounts[idx])
                 elif ch.lower() == "d" and accounts:
@@ -826,15 +957,54 @@ class App:
             self.status = f"Import failed: {exc}"
 
     def login_test(self, account: dict) -> None:
+        alias = account.get("alias", "account")
+        self.progress(f"Starting isolated Chromium for {alias}...")
         try:
             with AccountSession(self.vault, account) as session:
-                session.login(account["email"], account.get("password"), self.ask_secret, self.progress)
+                try:
+                    session.login(
+                        account["email"],
+                        account.get("password"),
+                        self.ask_secret,
+                        self.progress,
+                    )
+                except HumanVerificationRequired:
+                    account["status"] = "verification_required"
+                    self.vault.update(account)
+                    if not self.verification_supervisor(session, account):
+                        self.notice(
+                            "GROK VAULT / VERIFICATION PENDING",
+                            "The account profile was saved securely, but human verification "
+                            "has not been completed.",
+                        )
+                        return
+
+                if not session.wait_composer(timeout=5):
+                    raise GrokUiError(
+                        "verification/login did not reach an authenticated Grok composer"
+                    )
+
                 account["status"] = "ready"
                 account["last_login_at"] = utcnow()
                 self.vault.update(account)
-            self.status = f"Login verified for {account['alias']}."
+
+            self.status = f"Login verified for {alias}."
+            self.notice("GROK VAULT / LOGIN VERIFIED", self.status)
         except Exception as exc:
-            self.status = f"Login failed: {exc}"
+            self.status = f"Login failed for {alias}: {exc}"
+            self.notice("GROK VAULT / LOGIN FAILED", self.status)
+
+    def browse_ascii(self, account: dict) -> None:
+        alias = account.get("alias", "account")
+        self.progress(f"Opening headless ASCII Chromium for {alias}...")
+        try:
+            with AccountSession(self.vault, account) as session:
+                session.driver.get(GROK_URL)
+                self.ascii_browser(session, account)
+            self.status = f"ASCII Chromium session closed for {alias}; profile encrypted."
+        except Exception as exc:
+            self.status = f"ASCII Chromium failed for {alias}: {exc}"
+            self.notice("GROK VAULT / ASCII BROWSER ERROR", self.status)
 
     def reveal_credentials(self, account: dict) -> None:
         if not self.yesno(f"Reveal stored credentials for {account['alias']} on this SSH terminal?"):
@@ -964,9 +1134,12 @@ class App:
                 f"DigitalOcean-only Grok client — {APP_VERSION}",
                 "",
                 f"Active account: {active['alias'] if active else '(none)'}",
-                f"Status: {active.get('status','-') if active else '-'}",
+                f"Account state: {active.get('status','-') if active else '-'}",
+                f"UI status: {self.status}",
                 "",
                 "C  chat with active account",
+                "B  ASCII Chromium website browser",
+                "L  login/test active account",
                 "A  account manager / register / login",
                 "V  vault security information",
                 "Q  quit and lock vault",
@@ -979,6 +1152,20 @@ class App:
                 return
             if ch.lower() == "a":
                 self.accounts_screen()
+            elif ch.lower() == "b":
+                active = self.vault.active()
+                if not active:
+                    self.status = "No active account. Open A and select an account first."
+                    self.notice("GROK VAULT / ASCII BROWSER", self.status)
+                else:
+                    self.browse_ascii(active)
+            elif ch.lower() == "l":
+                active = self.vault.active()
+                if not active:
+                    self.status = "No active account. Open A, select an account with Enter, then press L."
+                    self.notice("GROK VAULT / LOGIN", self.status)
+                else:
+                    self.login_test(active)
             elif ch.lower() == "c":
                 active = self.vault.active()
                 if not active:

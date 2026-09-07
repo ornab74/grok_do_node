@@ -6,6 +6,7 @@ USER 0:0
 # toolchains during this small application-layer build.
 RUN python -m pip install --no-cache-dir --disable-pip-version-check --only-binary=:all: \
     'cryptography==50.0.1'
+COPY --chown=10001:10001 ascii_browser.py /app/ascii_browser.py
 COPY --chown=10001:10001 grok_vault_tui.py /app/grok_vault_tui.py
 RUN chmod 0444 /app/grok_vault_tui.py
 USER 10001:10001

@@ -250,3 +250,134 @@ For a checkout affected by the older manifest bug:
 ```bash
 sudo ./repair_pycache_manifest_v8_4.sh
 ```
+
+## V8.5 APT/dpkg lock handling
+
+Fresh DigitalOcean/Ubuntu systems may still be running `cloud-init`,
+`apt-daily`, or `unattended-upgrades` when installation starts.
+
+The installer now handles package-manager contention safely:
+
+- native dpkg lock wait: 60 seconds per apt invocation;
+- if the command still fails because of a lock, print the lock owner;
+- sleep 10 seconds and retry;
+- continue for up to 15 minutes by default;
+- never delete APT/dpkg lock files and never kill the lock holder.
+
+Optional tuning:
+
+```bash
+sudo APT_LOCK_MAX_WAIT_SECONDS=1200 \
+     APT_LOCK_RETRY_DELAY_SECONDS=15 \
+     ./install.sh
+```
+
+## V8.6 login-key feedback fix
+
+`L` now works both on the main screen and in Account Manager.
+
+Login/test immediately displays a working screen before Chromium starts, the
+Account Manager renders the latest UI status, and login success/failure is
+shown in a modal requiring a key press. This prevents a real login attempt from
+appearing to do nothing while headless Chromium is starting or waiting on xAI.
+
+## V8.7 Squid whole-domain ACL correction
+
+Squid `dstdomain` distinguishes exact hosts from whole-domain matches:
+
+```text
+grok.com      # exact host
+.grok.com     # grok.com plus subdomains
+```
+
+The hardened egress rule is therefore:
+
+```text
+acl approved_domains dstdomain .grok.com .x.ai challenges.cloudflare.com
+```
+
+Do not list both an exact parent and its leading-dot domain form in the same
+ACL because Squid rejects overlapping domain entries.
+
+Diagnostic helper:
+
+```bash
+sudo grok-denied
+```
+
+This displays a frequency-sorted list of hostnames currently refused by Squid.
+
+## V8.8 TUI verification monitor
+
+When xAI/Cloudflare presents a human-verification page, the TUI keeps the same
+decrypted account profile and Chromium session alive and displays a terminal
+status panel:
+
+```text
+[ ] Human verification
+
+State: Human verification is still pending.
+R  recheck now
+Esc  cancel and securely save the profile
+```
+
+If the challenge clears and Grok's authenticated composer becomes available,
+the TUI changes to `[x]` and resumes login.
+
+The monitor is deliberately observation-only. It does not map terminal
+keystrokes to CAPTCHA/anti-bot controls or programmatically click them.
+
+## V8.9 ASCII Chromium frontend
+
+V8.9 adds a terminal-native website browser backed by the existing hardened
+headless Chromium process. No X11, Wayland, VNC, noVNC, Xvfb, desktop
+environment, or websockify is added.
+
+From the main vault screen:
+
+```text
+B  ASCII Chromium website browser
+```
+
+The frontend converts visible DOM semantics into curses rows:
+
+```text
+001 # Sign in
+002 <textbox> Email
+003 [ Continue ]
+004 [ ] Remember this browser
+005 <link> Privacy
+```
+
+Keys:
+
+```text
+j/k or arrows   move
+Tab             next semantic control
+Shift-Tab       previous semantic control
+Enter           activate ordinary control
+e               edit ordinary text field
+Space           toggle ordinary checkbox/radio/switch
+r               reload
+b               back
+f               forward
+g               navigate to an allowed HTTPS URL
+q / Esc         return to the vault
+```
+
+Embedded frames are recursively represented using the same headless Chromium
+session. Cross-origin content is inspected through WebDriver frame switching
+rather than rendered through a graphical desktop stack.
+
+Dedicated anti-bot verification controls are shown as read-only terminal
+content. This restriction is explicit in `ascii_browser.py`; ordinary Grok/xAI
+forms, links, text fields, buttons, and checkboxes remain interactive.
+
+The verification monitor also has:
+
+```text
+B  open full ASCII Chromium view
+```
+
+so the same live browser/profile can be inspected without destroying the
+pending authentication session.

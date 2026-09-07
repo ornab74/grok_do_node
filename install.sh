@@ -18,6 +18,12 @@ readonly MIN_CPUS=2
 readonly MIN_MEMORY_MIB=3500
 readonly MIN_DISK_MIB=10000
 
+# Fresh DigitalOcean/Ubuntu nodes may still have cloud-init, apt-daily, or
+# unattended-upgrades holding APT/dpkg locks. Never delete lock files.
+readonly APT_LOCK_MAX_WAIT_SECONDS="${APT_LOCK_MAX_WAIT_SECONDS:-900}"
+readonly APT_LOCK_RETRY_DELAY_SECONDS="${APT_LOCK_RETRY_DELAY_SECONDS:-10}"
+readonly APT_DPKG_LOCK_TIMEOUT_SECONDS="${APT_DPKG_LOCK_TIMEOUT_SECONDS:-60}"
+
 SERVICE_UID=""
 SERVICE_GID=""
 RUNTIME_DIR=""
@@ -133,6 +139,72 @@ verify_security_source(){
   python3 "$SOURCE_DIR/scripts/verify-runtime-profiles.py"
 }
 
+apt_output_is_lock_contention(){
+  local file="$1"
+  grep -Eqi \
+    'Could not get lock|Unable to acquire .*lock|held by process [0-9]+|is another process using it|/var/lib/dpkg/lock|/var/lib/dpkg/lock-frontend|/var/lib/apt/lists/lock|/var/cache/apt/archives/lock' \
+    "$file"
+}
+
+show_apt_lock_owner(){
+  local file="$1" pid found=0
+  while read -r pid; do
+    [[ "$pid" =~ ^[0-9]+$ ]] || continue
+    found=1
+    printf 'APT/dpkg lock owner: '
+    ps -p "$pid" -o pid=,etime=,comm=,args= 2>/dev/null || printf 'pid=%s (already exited)\n' "$pid"
+  done < <(grep -Eo 'held by process [0-9]+' "$file" | awk '{print $4}' | sort -u)
+
+  if (( found == 0 )); then
+    ps -eo pid=,etime=,comm=,args= 2>/dev/null \
+      | grep -E '[a]pt(-get)?|[d]pkg|[u]nattended-upgrade|[p]ackagekit' \
+      | head -12 \
+      | sed 's/^/Possible package-manager owner: /' || true
+  fi
+}
+
+apt_retry(){
+  local started now elapsed remaining sleep_for attempt=1 rc tmp
+  started="$(date +%s)"
+
+  while :; do
+    tmp="$(mktemp /tmp/grok-apt.XXXXXX.log)"
+
+    # Keep output live for SSH users while preserving a copy for lock detection.
+    if "$@" 2>&1 | tee "$tmp"; then
+      rm -f "$tmp"
+      return 0
+    else
+      rc="${PIPESTATUS[0]}"
+    fi
+
+    if ! apt_output_is_lock_contention "$tmp"; then
+      rm -f "$tmp"
+      return "$rc"
+    fi
+
+    now="$(date +%s)"
+    elapsed=$((now - started))
+    remaining=$((APT_LOCK_MAX_WAIT_SECONDS - elapsed))
+
+    if (( remaining <= 0 )); then
+      warn "APT/dpkg stayed locked for ${elapsed}s; giving up without deleting any lock file"
+      show_apt_lock_owner "$tmp"
+      rm -f "$tmp"
+      return "$rc"
+    fi
+
+    show_apt_lock_owner "$tmp"
+    sleep_for="$APT_LOCK_RETRY_DELAY_SECONDS"
+    (( sleep_for > remaining )) && sleep_for="$remaining"
+
+    warn "APT/dpkg is busy (attempt ${attempt}); waiting ${sleep_for}s, then retrying. Max wait=${APT_LOCK_MAX_WAIT_SECONDS}s."
+    rm -f "$tmp"
+    sleep "$sleep_for"
+    attempt=$((attempt + 1))
+  done
+}
+
 load_os_release(){
   [[ -r /etc/os-release ]] || die '/etc/os-release is unavailable'
   # shellcheck disable=SC1091
@@ -156,8 +228,8 @@ install_host_packages(){
   PHASE="host-packages"
   load_os_release
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update
-  apt-get install -y --no-install-recommends \
+  apt_retry apt-get -o "DPkg::Lock::Timeout=${APT_DPKG_LOCK_TIMEOUT_SECONDS}" update
+  apt_retry apt-get -o "DPkg::Lock::Timeout=${APT_DPKG_LOCK_TIMEOUT_SECONDS}" install -y --no-install-recommends \
     ca-certificates curl uidmap dbus-user-session slirp4netns fuse-overlayfs \
     iproute2 procps apparmor apparmor-utils acl systemd python3 gnupg
 
@@ -188,8 +260,8 @@ Components: stable
 Architectures: amd64
 Signed-By: /etc/apt/keyrings/docker.asc
 APT
-  apt-get update
-  apt-get install -y --no-install-recommends \
+  apt_retry apt-get -o "DPkg::Lock::Timeout=${APT_DPKG_LOCK_TIMEOUT_SECONDS}" update
+  apt_retry apt-get -o "DPkg::Lock::Timeout=${APT_DPKG_LOCK_TIMEOUT_SECONDS}" install -y --no-install-recommends \
     docker-ce docker-ce-cli containerd.io docker-ce-rootless-extras \
     docker-buildx-plugin docker-compose-plugin
   docker_stack_available || die 'Docker rootless stack installation did not complete'
